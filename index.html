@@ -1,0 +1,1529 @@
+<!doctype html>
+<!--
+マップの開き方。WSL起動
+cd /path/to/web
+python -m http.server 8000
+任意のブラウザで以下のどちらかを指定
+http://localhost:8000/
+http://127.0.0.1:8000/
+-->
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>避難経路マップ（高島市周辺）</title>
+
+  <!-- OpenLayers -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@9.2.4/ol.css">
+  <script src="https://cdn.jsdelivr.net/npm/ol@9.2.4/dist/ol.js"></script>
+
+  <!-- FlatGeobuf (local) -->
+  <script src="./flatgeobuf-geojson.min.js"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif; }
+    #app { display: grid; grid-template-columns: 420px 1fr; height: 100%; }
+    #panel { border-right: 1px solid #e5e7eb; padding: 14px 14px 10px; overflow: auto; }
+    #map { width: 100%; height: 100%; }
+    h1 { font-size: 16px; margin: 0 0 10px; }
+    h2 { font-size: 13px; margin: 14px 0 6px; }
+    .muted { color: #555; font-size: 12px; }
+    .box { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
+    .controls { display: grid; gap: 10px; }
+    .row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+    select, input[type="range"], button { width: 100%; }
+    button { padding: 8px 10px; border-radius: 10px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; }
+    button:hover { background: #f3f4f6; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+    details > summary { cursor: pointer; font-weight: 700; }
+
+    /* Popup */
+    .ol-popup {
+      position: absolute;
+      background: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      min-width: 220px;
+      max-width: 340px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .ol-popup:after, .ol-popup:before {
+      top: 100%;
+      border: solid transparent;
+      content: " ";
+      height: 0;
+      width: 0;
+      position: absolute;
+      pointer-events: none;
+    }
+    .ol-popup:after {
+      border-top-color: white;
+      border-width: 10px;
+      left: 28px;
+      margin-left: -10px;
+    }
+    .ol-popup:before {
+      border-top-color: #e5e7eb;
+      border-width: 11px;
+      left: 28px;
+      margin-left: -11px;
+    }
+    .popup-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .popup-title { font-weight: 800; }
+    .popup-close {
+      border: 1px solid #d1d5db;
+      background:#fff;
+      border-radius:8px;
+      padding:2px 8px;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .popup-close:hover { background:#f3f4f6; }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>避難経路マップ（高島市周辺）</h1>
+
+    <div class="box" id="introBox">
+      <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
+本マップは、高島市周辺における避難経路決定の参考にしていただくためのマップです。
+リスクが小さい避難経路を表示する、経路のリスクを可視化することによって、避難中（ご自宅から避難所までの移動の際中）に被災することがなくなることを目的に作成したものです。ご自身の都合に適切な避難経路を選択するための一助になれば幸いです。
+表示された避難経路は必ずしも安全というわけではありません。表示された経路を実際にご自身で確認し、危険な箇所が有無をご確認ください。あくまで、ご自身で避難経路を考える際の参考としてご利用ください。
+また、データの都合上、反映されていない道路があったり、道路・水路が現実とは位置がずれていたりなどの不整合が存在しますことをご了承ください。
+詳細は下記詳細欄をご確認ください。
+      </div>
+    </div>
+
+    <h2>使い方</h2>
+    <div class="box">
+      <details>
+        <summary>クリックして開く</summary>
+        <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
+ダブルクリックした地点に最も近い道路結節点（交差点）などを出発点として最短時間で到達できる避難所までの安全性の高い経路を表示します。
+まず、ご自身の年齢と期待安全度を選択してください。
+
+・年齢：
+6歳～90歳まで導入してあります。当マップでは年齢ごとに移動時間の平均を用いて、避難に費される時間も表示しています。あくまで目安の時間であることをご了承ください。
+
+・期待安全度：
+避難経路に求める安全度を指します。
+例：
+1.0→リスクがないであろう経路が表示されます。
+0.5→50%のリスクを許容した場合の避難経路が表示されます。
+0.0→すべてのリスクを無視した避難経路が表示されます。
+
+避難経路は以下の4種類に分類されます。
+Ａ：同じ自治体内の避難所への経路（推奨）
+Ｂ：自治体境界を無視した場合の避難所への経路（市外が含まれる）
+ＣＡ：転落のリスクのみを回避し、同自治体内の避難所へ到達する経路
+ＣＢ：転落のリスクのみを回避し、すべての避難所へ到達する経路
+
+指定地点は黒い丸、出発点は白い丸にＳ、目的地避難所は白い丸にＡ/Ｂ（またはＣＡ/ＣＢ）で表示します。
+また、経路上の危険区間（赤/橙/紫）をクリックすると、リスク情報が表示されます。
+        </div>
+      </details>
+    </div>
+
+	<h2>表示</h2>
+	<div class="box">
+	  <details>
+		<summary>クリックして開く</summary>
+
+		<div style="margin-top:8px; display:grid; gap:8px;">
+		  <label><input type="checkbox" id="toggleRoutes" checked> 避難経路を表示</label>
+		  <label><input type="checkbox" id="toggleRisk" checked> 危険区間（赤/橙/紫）を表示</label>
+		  <label><input type="checkbox" id="toggleMarkers" checked> 出発点/避難所マーカーを表示</label>
+		</div>
+
+		<div class="muted" style="margin-top:8px;">
+		  ※表示を切り替えるだけで、計算結果自体は変わりません。
+		</div>
+	  </details>
+	</div>
+
+
+
+
+    <h2>設定</h2>
+    <div class="box controls">
+      <div class="row">
+        <div>年齢</div>
+        <select id="ageSelect"></select>
+      </div>
+
+      <div class="row">
+        <div>期待安全度</div>
+        <div>
+          <input id="thrRange" type="range" min="0" max="1" step="0.1" value="0.6">
+          <div class="muted">現在：<span id="thrLabel">0.6</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>操作</div>
+        <button id="clearBtn">クリア</button>
+      </div>
+    </div>
+
+		<details id="optDetails">
+		  <summary>オプション</summary>
+		
+		  <div class="row" style="margin-top:8px;">
+			<label><input type="checkbox" id="optComposite" checked> 複合リスク回避経路</label>
+		  </div>
+		  <div class="row" style="margin-top:4px;">
+			<label><input type="checkbox" id="optRfallOnly"> 転落リスク回避経路</label>
+		  </div>
+		
+		  <div style="margin-top:8px; font-size:0.9em; opacity:0.85;">
+			「転落リスク回避経路」を選ぶと、浸水は考慮せず、転落リスクがある道路を避ける経路を優先して表示します。
+		  </div>
+		</details>
+
+    <h2>結果</h2>
+    <div class="box">
+      <pre id="result">地図をダブルクリックしてください。</pre>
+    </div>
+
+    <h2>ステータス</h2>
+    <div class="box">
+      <pre id="status">Initializing...</pre>
+    </div>
+
+    <h2>詳細</h2>
+    <div class="box">
+      <details>
+        <summary>詳細を表示</summary>
+        <div class="muted" style="margin-top:8px;">
+          （ここに論文URLや説明文を後で追加できます）
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div id="mapWrap" style="position:relative;">
+    <div id="map"></div>
+
+    <!-- Popup -->
+    <div id="popup" class="ol-popup" style="display:none;">
+      <div class="popup-head">
+        <div id="popup-title" class="popup-title">リスク情報</div>
+        <button id="popup-close" class="popup-close" type="button">閉じる</button>
+      </div>
+      <div id="popup-content" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+  const ageSelect = document.getElementById("ageSelect");
+  const thrRange = document.getElementById("thrRange");
+  const thrLabel = document.getElementById("thrLabel");
+  const clearBtn = document.getElementById("clearBtn");
+
+  const popupEl = document.getElementById("popup");
+  const popupTitleEl = document.getElementById("popup-title");
+  const popupContentEl = document.getElementById("popup-content");
+  const popupCloseBtn = document.getElementById("popup-close");
+
+  const logStatus = (msg) => { statusEl.textContent = msg; };
+
+  if (typeof window.ol === "undefined") {
+    logStatus("ERROR: OpenLayers(ol) failed to load.");
+    return;
+  }
+
+  // ---------- Colors / styles ----------
+  const ROUTE_STYLE = {
+    "A":  { color: "rgba(0, 90, 200, 0.85)", width: 7 }, // muni (推奨)
+    "B":  { color: "rgba(30, 30, 30, 0.70)", width: 6 }, // global
+    "CA": { color: "rgba(0, 140, 60, 0.85)", width: 7 }, // muni rfall avoid
+    "CB": { color: "rgba(80, 180, 120, 0.80)", width: 6 }, // global rfall avoid
+    "A0": { color: "rgba(0, 90, 200, 0.55)", width: 6 },
+    "B0": { color: "rgba(30, 30, 30, 0.45)", width: 5 },
+  };
+
+  // 透明度70% -> alpha 0.30
+  const RISK_COLOR = {
+    "FLOOD": "rgba(220,0,0,0.30)",
+    "FALL":  "rgba(255,140,0,0.30)",
+    "BOTH":  "rgba(150,0,200,0.30)"
+  };
+
+  // 破線を細かく
+  const DASH_FINE = [2, 4];
+
+  const TOL_JOIN = 5e-5;
+
+  // ---------- Stores ----------
+  let lonArr=null, latArr=null, nodeIdArr=null, muniArr=null, isShelterArr=null, nNodes=0;
+  const nodeID2Vid = new Map();
+
+  let grid=null, gridMinLon=0, gridMinLat=0, gridCell=0.01;
+
+  // edge geometry: edgeID -> [part coords...]
+  const edgeSegsById = new Map();
+  // edge attrs: edgeID -> obj
+  const edgeAttrById = new Map();
+  // shelter names
+  let shelterNameByNodeID = {};
+
+  let catalog = null;
+  const ageCache = new Map();
+  const sliceCache = new Map();
+
+  // ---------- Layers ----------
+  const routeSource = new ol.source.Vector();
+  const routeLayer = new ol.layer.Vector({
+    source: routeSource,
+    style: (feature) => {
+      const t = feature.get("routeType");
+      const s = ROUTE_STYLE[t] || {color:"rgba(0,0,0,0.8)", width:6};
+      return new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: s.color, width: s.width })
+      });
+    }
+  });
+
+  // ★重要：リスクは「ルートより上」に描く（A/Bの破線が隠れない）
+  const riskSource = new ol.source.Vector();
+  const riskLayer = new ol.layer.Vector({
+    source: riskSource,
+    style: (feature) => {
+      const rtype = feature.get("riskType");
+      const dashed = !!feature.get("dashed");
+      const color = RISK_COLOR[rtype] || "rgba(0,0,0,0.25)";
+      return new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color,
+          width: dashed ? 7 : 7,
+          lineDash: dashed ? DASH_FINE : null,
+          lineCap: "butt"
+        })
+      });
+    }
+  });
+
+  // selected highlight
+  const highlightSource = new ol.source.Vector();
+  const highlightLayer = new ol.layer.Vector({
+    source: highlightSource,
+    style: (feature) => {
+      const rtype = feature.get("riskType");
+      const base = RISK_COLOR[rtype] || "rgba(0,0,0,0.35)";
+      const color = base.replace(/rgba\(([^)]+),\s*0\.\d+\)/, "rgba($1,0.90)");
+      return new ol.style.Style({
+        stroke: new ol.style.Stroke({ color, width: 10, lineCap: "round" })
+      });
+    }
+  });
+
+  const pointSource = new ol.source.Vector();
+  const pointLayer = new ol.layer.Vector({
+    source: pointSource,
+    style: (feature) => {
+      const kind = feature.get("kind");
+      const label = feature.get("label") || "";
+      let fill = "rgba(255,255,255,0.9)";
+      let stroke = "rgba(0,0,0,0.9)";
+      let radius = 7;
+      if (kind === "click") { fill = "rgba(0,0,0,0.9)"; stroke = "rgba(255,255,255,0.9)"; radius = 6; }
+      return new ol.style.Style({
+        image: new ol.style.Circle({
+          radius,
+          fill: new ol.style.Fill({ color: fill }),
+          stroke: new ol.style.Stroke({ color: stroke, width: 2 })
+        }),
+        text: new ol.style.Text({
+          text: label,
+          font: "bold 12px sans-serif",
+          fill: new ol.style.Fill({ color: kind === "click" ? "rgba(255,255,255,1)" : "rgba(0,0,0,1)" }),
+          stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.9)", width: 3 }),
+          offsetY: -15
+        })
+      });
+    }
+  });
+
+  // 0埋めの1桁年齢を読む
+  function ageDirName(age){
+    const a = Number(age);
+    return `age_${String(a).padStart(2, "0")}`; // 06,07,...,90
+  }
+
+
+  // ---------- Map ----------
+  const map = new ol.Map({
+    target: "map",
+    layers: [
+      new ol.layer.Tile({ source: new ol.source.OSM() }),
+      routeLayer,
+      riskLayer,       // ★ routeの上
+      highlightLayer,  // ★さらに上
+      pointLayer
+    ],
+    view: new ol.View({
+      center: ol.proj.fromLonLat([136.1, 35.3]),
+      zoom: 11
+    })
+  });
+  
+  // ---------- Coverage polygon (data extent) ----------
+  async function addCoverageLayer(){
+    try{
+      // web/ 直下に置いた GeoJSON
+      const gj = await fetchJSON("./coverage_diff.geojson");
+  
+      const features = new ol.format.GeoJSON().readFeatures(gj, {
+        dataProjection: "EPSG:4326",
+        featureProjection: map.getView().getProjection(), // OSMなら通常EPSG:3857
+      });
+  
+      const coverageSource = new ol.source.Vector({ features });
+  
+      const coverageLayer = new ol.layer.Vector({
+        source: coverageSource,
+        style: new ol.style.Style({
+          fill: new ol.style.Fill({ color: "rgba(128,128,128,0.5)" }), // 50%灰
+          stroke: new ol.style.Stroke({ color: "rgba(80,80,80,0.8)", width: 2 }),
+        }),
+      });
+  
+      // ルートより下、ベース地図より上に置きたい場合（必要なら調整）
+      coverageLayer.setZIndex(1);
+  
+      map.addLayer(coverageLayer);
+  
+      logStatus("Ready. (coverage loaded)");
+    }catch(err){
+      console.error(err);
+      logStatus("WARN: coverage load failed: " + (err?.message || String(err)));
+    }
+  }
+  addCoverageLayer();
+
+  // 
+  async function ensureFlatGeobuf() {
+    if (window.flatgeobuf?.geojson?.deserialize) return;
+  
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "./flatgeobuf-geojson.min.js";   // ←このファイルをweb_demoに置く
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("failed to load flatgeobuf-geojson.min.js"));
+      document.head.appendChild(s);
+    });
+  
+    if (!window.flatgeobuf?.geojson?.deserialize) {
+      throw new Error("flatgeobuf library not available (after loading script)");
+    }
+  }
+  
+
+  // disable DoubleClickZoom (so dblclick used for start selection only)
+  (function disableDoubleClickZoom(){
+    const DCZ = ol?.interaction?.DoubleClickZoom;
+    if (!DCZ) return;
+    const rm = [];
+    map.getInteractions().forEach((it) => { try { if (it instanceof DCZ) rm.push(it); } catch(_){} });
+    rm.forEach((it)=>map.removeInteraction(it));
+  })();
+
+  // ---------- Popup overlay (NO autoPan) ----------
+  const popupOverlay = new ol.Overlay({
+    element: popupEl,
+    autoPan: false,         // ★これで「勝手に移動」を止める
+    stopEvent: true,        // ★popup上のクリックを地図に伝播させない
+    offset: [0, -12],
+    positioning: "bottom-center"
+  });
+  map.addOverlay(popupOverlay);
+
+  function hidePopup(){
+    popupOverlay.setPosition(undefined);
+    popupEl.style.display = "none";
+    highlightSource.clear();
+  }
+  popupCloseBtn.addEventListener("click", hidePopup);
+
+  // ---------- Utils ----------
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  async function fetchText(url){
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`fetch failed: ${url} (${r.status})`);
+    return await r.text();
+  }
+  async function fetchJSON(url){
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`fetch failed: ${url} (${r.status})`);
+    return await r.json();
+  }
+
+  function shelterName(nodeID){
+    const o = shelterNameByNodeID?.[String(nodeID)] ?? shelterNameByNodeID?.[nodeID];
+    if (!o) return "";
+    if (typeof o === "string") return o;
+    if (typeof o === "object") {
+      if (typeof o.name === "string") return o.name;
+      if (Array.isArray(o.names)) return o.names.join(" / ");
+      try { return JSON.stringify(o); } catch(_) { return String(o); }
+    }
+    return String(o);
+  }
+
+  function formatMinutes(sec){
+    if (!Number.isFinite(sec)) return "到達不能";
+    return `${(sec/60).toFixed(1)} 分`;
+  }
+
+  function sameSeq(a, b){
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    for (let i=0;i<a.length;i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  function dist2(a,b){
+    const dx=a[0]-b[0], dy=a[1]-b[1];
+    return dx*dx+dy*dy;
+  }
+
+  function samePoint(a,b,tol){ return Math.abs(a[0]-b[0])<=tol && Math.abs(a[1]-b[1])<=tol; }
+
+  // ---------- nearest node grid ----------
+  function buildGrid(){
+    let minLon=Infinity, maxLon=-Infinity, minLat=Infinity, maxLat=-Infinity;
+    for (let i=0;i<nNodes;i++){
+      const lo = lonArr[i], la = latArr[i];
+      if (lo<minLon) minLon=lo;
+      if (lo>maxLon) maxLon=lo;
+      if (la<minLat) minLat=la;
+      if (la>maxLat) maxLat=la;
+    }
+    gridMinLon=minLon; gridMinLat=minLat;
+    gridCell = 0.01;
+    grid = new Map();
+    for (let i=0;i<nNodes;i++){
+      const ix = Math.floor((lonArr[i]-gridMinLon)/gridCell);
+      const iy = Math.floor((latArr[i]-gridMinLat)/gridCell);
+      const key = ix + "," + iy;
+      let arr = grid.get(key);
+      if (!arr){ arr=[]; grid.set(key, arr); }
+      arr.push(i);
+    }
+  }
+
+  function nearestVid(lon, lat){
+    const ix0 = Math.floor((lon-gridMinLon)/gridCell);
+    const iy0 = Math.floor((lat-gridMinLat)/gridCell);
+    let best = -1;
+    let bestD = Infinity;
+    for (let r=0; r<=8; r++){
+      let foundAny = false;
+      for (let dx=-r; dx<=r; dx++){
+        for (let dy=-r; dy<=r; dy++){
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const key = (ix0+dx) + "," + (iy0+dy);
+          const arr = grid.get(key);
+          if (!arr) continue;
+          foundAny = true;
+          for (const vid of arr){
+            const d = (lonArr[vid]-lon)*(lonArr[vid]-lon) + (latArr[vid]-lat)*(latArr[vid]-lat);
+            if (d < bestD){ bestD = d; best = vid; }
+          }
+        }
+      }
+      if (foundAny && best !== -1) return best;
+    }
+    return best;
+  }
+
+
+  async function ensureFlatGeobuf() {
+    if (globalThis.flatgeobuf?.geojson?.deserialize) return;
+  
+    // キャッシュ回避（確実に新しい内容を読む）
+    const url = "./flatgeobuf-geojson.min.js?v=" + Date.now();
+  
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = url;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("failed to load " + url));
+      document.head.appendChild(s);
+    });
+  
+    // ここでまだ無ければ、JSは実行されたがグローバルが生えない/中で落ちてる
+    if (!globalThis.flatgeobuf?.geojson?.deserialize) {
+      console.error("flatgeobuf loaded but not available. globalThis.flatgeobuf =", globalThis.flatgeobuf);
+      console.error("script tags:", [...document.scripts].map(s => s.src).filter(Boolean));
+      throw new Error("flatgeobuf library not available (after loading)");
+    }
+  }
+  
+
+
+  // ---------- Load nodes ----------
+  async function loadNodesCSV(){
+    logStatus("Loading nodes_wgs84.csv ...");
+    const txt = await fetchText("./nodes_wgs84.csv");
+    const lines = txt.split("\n");
+    const header = lines[0].trim().split(",");
+    const idxLon = header.indexOf("lon");
+    const idxLat = header.indexOf("lat");
+    const idxNodeID = header.indexOf("nodeID");
+    const idxMuni = header.indexOf("muniCode");
+    const idxIsShelter = header.indexOf("is_shelter");
+    if (idxLon<0 || idxLat<0 || idxNodeID<0) throw new Error("nodes_wgs84.csv must have nodeID, lon, lat");
+
+    const est = lines.length - 2;
+    lonArr = new Float64Array(est);
+    latArr = new Float64Array(est);
+    nodeIdArr = new Int32Array(est);
+    muniArr = new Int32Array(est);
+    isShelterArr = new Uint8Array(est);
+
+    let k=0;
+    for (let i=1;i<lines.length;i++){
+      const line = lines[i];
+      if (!line) continue;
+      const cols = line.split(",");
+      const lo = Number(cols[idxLon]);
+      const la = Number(cols[idxLat]);
+      const nid = Number(cols[idxNodeID]);
+      if (!Number.isFinite(lo) || !Number.isFinite(la) || !Number.isFinite(nid)) continue;
+
+      lonArr[k]=lo; latArr[k]=la;
+      nodeIdArr[k]=nid|0;
+
+      const mc = (idxMuni>=0) ? Number(cols[idxMuni]) : -1;
+      muniArr[k]=Number.isFinite(mc) ? (mc|0) : -1;
+
+      const sh = (idxIsShelter>=0) ? Number(cols[idxIsShelter]) : 0;
+      isShelterArr[k]=(Number.isFinite(sh) && sh===1) ? 1 : 0;
+
+      nodeID2Vid.set(nodeIdArr[k], k);
+      k++;
+
+      if (k % 50000 === 0){ logStatus(`Loading nodes... ${k.toLocaleString()}`); await sleep(0); }
+    }
+    nNodes = k;
+    logStatus(`Loaded nodes: ${nNodes.toLocaleString()}`);
+    buildGrid();
+  }
+
+  // ---------- Load edge attrs ----------
+  async function loadEdgeAttrs(){
+    logStatus("Loading edge_attrs_by_edgeid.csv ...");
+    const txt = await fetchText("./edge_attrs_by_edgeid.csv");
+    const lines = txt.split("\n");
+    const header = lines[0].trim().split(",");
+    const idx = (name)=>header.indexOf(name);
+
+    const iEdgeID = idx("edgeID");
+    const iCount = idx("count");
+    const iFloodPct = idx("flood_ratio_pct");
+
+    const iRfallY = idx("Rfall_young_pct");
+    const iRfallO = idx("Rfall_old_pct");
+
+    const iBase = idx("rf_base_pct");
+    const iFence = idx("rf_fence_pct");
+    const iSlope = idx("rf_slope_pct");
+    const iWidth = idx("rf_width_pct");
+
+    if (iEdgeID<0) throw new Error("edge_attrs_by_edgeid.csv missing edgeID");
+
+    for (let i=1;i<lines.length;i++){
+      const line = lines[i];
+      if (!line) continue;
+      const c = line.split(",");
+      const eid = Number(c[iEdgeID]);
+      if (!Number.isFinite(eid)) continue;
+
+      edgeAttrById.set(eid|0, {
+        count: (iCount>=0) ? Number(c[iCount]) : 0,
+        flood_ratio_pct: (iFloodPct>=0) ? Number(c[iFloodPct]) : NaN,
+        Rfall_young_pct: (iRfallY>=0) ? Number(c[iRfallY]) : 0,
+        Rfall_old_pct: (iRfallO>=0) ? Number(c[iRfallO]) : 0,
+        rf_base_pct: (iBase>=0) ? Number(c[iBase]) : 0,
+        rf_fence_pct: (iFence>=0) ? Number(c[iFence]) : 0,
+        rf_slope_pct: (iSlope>=0) ? Number(c[iSlope]) : 0,
+        rf_width_pct: (iWidth>=0) ? Number(c[iWidth]) : 0,
+      });
+    }
+    logStatus(`Loaded edge attrs: ${edgeAttrById.size.toLocaleString()}`);
+  }
+
+  async function loadShelterNames(){
+    logStatus("Loading shelter_name_by_nodeID.json ...");
+    shelterNameByNodeID = await fetchJSON("./shelter_name_by_nodeID.json");
+  }
+
+  // ---------- Load edges geometry ----------
+  function pushEdgeSegment(edgeID, coords){
+    if (!coords || coords.length < 2) return;
+    let arr = edgeSegsById.get(edgeID);
+    if (!arr){ arr=[]; edgeSegsById.set(edgeID, arr); }
+    arr.push(coords);
+  }
+
+  async function loadEdgesGeoJSON(){
+    const t0 = performance.now();
+    logStatus("Loading edges_min.geojson ...");
+    const gj = await fetchJSON("./edges_min.geojson");
+    const feats = gj.features || [];
+    let n=0;
+    for (const f of feats){
+      const props = f.properties || {};
+      const edgeID = Number(props.edgeID);
+      const g = f.geometry;
+      if (!Number.isFinite(edgeID) || !g) continue;
+      if (g.type==="LineString") pushEdgeSegment(edgeID|0, g.coordinates);
+      else if (g.type==="MultiLineString") for (const part of g.coordinates) pushEdgeSegment(edgeID|0, part);
+      n++;
+      if (n % 50000 === 0){ logStatus(`Loading edges... ${n.toLocaleString()}`); await sleep(0); }
+    }
+    const dt = (performance.now()-t0)/1000;
+    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()} (GeoJSON, ${dt.toFixed(1)} s). Double-click on the map.`);
+  }
+
+  async function loadEdgesFGB(){
+    const t0 = performance.now();
+    logStatus("Loading edges_min.fgb ...");
+  
+    const fg = globalThis.flatgeobuf;
+    if (!fg || typeof fg.deserialize !== "function") {
+      throw new Error("flatgeobuf.deserialize is not available");
+    }
+  
+    // ogrinfo の Extent（全範囲bbox）
+    const bboxAll = {
+      minX: 135.764476,
+      minY: 35.174088,
+      maxX: 136.179544,
+      maxY: 35.582073,
+    };
+  
+    edgeSegsById.clear();
+  
+    let feats = 0;
+    for await (const f of fg.deserialize("./edges_min.fgb", bboxAll)) {
+      feats++;
+      if (feats === 1) console.log("First FGB feature:", f);
+  
+      const props = f.properties || {};
+      // ★重要：edgeID は String の可能性が高いので Number化で落とさない
+      const edgeID = props.edgeID ?? props.edgeId ?? props.id;
+      if (edgeID == null) continue;
+  
+      const g = f.geometry;
+      if (!g) continue;
+  
+      if (g.type === "LineString") {
+        pushEdgeSegment(String(edgeID), g.coordinates);
+      } else if (g.type === "MultiLineString") {
+        for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
+      }
+  
+      if (feats % 50000 === 0) {
+        logStatus(`Loading edges_min.fgb ... feats=${feats.toLocaleString()} edges=${edgeSegsById.size.toLocaleString()}`);
+        await sleep(0);
+      }
+    }
+  
+    const dt = (performance.now() - t0) / 1000;
+    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()} (feats=${feats.toLocaleString()}, ${dt.toFixed(1)}s). Double-click on the map.`);
+  }
+  
+
+  async function loadEdgesAuto(){
+    try {
+      await loadEdgesFGB();
+    } catch(e){
+      console.error("FGB failed:", e);
+      edgeSegsById.clear();
+      logStatus("ERROR: FGB failed: " + (e?.message || e));
+    }
+  }
+  
+
+
+  // ---------- shapes.json + slice loader ----------
+  function bytesPer(dtype){
+    if (dtype==="float32") return 4;
+    if (dtype==="int32") return 4;
+    throw new Error("unsupported dtype: "+dtype);
+  }
+  function makeTyped(dtype, buffer){
+    if (dtype==="float32") return new Float32Array(buffer);
+    if (dtype==="int32") return new Int32Array(buffer);
+    throw new Error("unsupported dtype: "+dtype);
+  }
+  async function fetchArraySlice(url, dtype, offsetBytes, lengthBytes){
+    const headers = { "Range": `bytes=${offsetBytes}-${offsetBytes + lengthBytes - 1}` };
+    let r = await fetch(url, { headers, cache:"no-store" });
+    if (r.status === 206){
+      const ab = await r.arrayBuffer();
+      return makeTyped(dtype, ab);
+    }
+    const abAll = await r.arrayBuffer();
+    return makeTyped(dtype, abAll.slice(offsetBytes, offsetBytes+lengthBytes));
+  }
+
+  function getMeta(shapes, name){
+    const dtypes = shapes.dtypes || {};
+    const shapesMap = shapes.shapes || {};
+    const files = shapes.files || {};
+    const dtype = dtypes[name];
+    const shape = shapesMap[name];
+    const file = files[name];
+    return {dtype, shape, file};
+  }
+
+  async function loadShapesForAge(age){
+    if (ageCache.has(age)) return ageCache.get(age);
+	const dir = ageDirName(age);
+	const shapesUrl = `./${dir}/shapes.json`;
+	const shapes = await fetchJSON(shapesUrl);
+    //const dir = `./age_${age}`;
+    //const shapes = await fetchJSON(`${dir}/shapes.json`);
+
+    let thresholds=null;
+    if (Array.isArray(shapes.thresholds)) thresholds = shapes.thresholds.map(Number);
+    if (!thresholds){
+      const m = getMeta(shapes,"thresholds");
+      if (m.file && m.dtype){
+        const ab = await (await fetch(`${dir}/${m.file}`, {cache:"no-store"})).arrayBuffer();
+        thresholds = Array.from(makeTyped(m.dtype, ab)).map(Number);
+      }
+    }
+    if (!thresholds) throw new Error("thresholds not found.");
+
+    let nn = shapes.n_nodes || null;
+    if (!nn){
+      const m = getMeta(shapes, "dist_global_psafe");
+      if (m.shape && m.shape.length>=2) nn = Number(m.shape[m.shape.length-1]);
+    }
+    if (!nn) nn = nNodes;
+
+    const info = {age, dir, shapes, thresholds, n_nodes: nn, superVid: nn};
+    ageCache.set(age, info);
+    return info;
+  }
+
+  function pickThrIdx(thresholds, thr){
+    let bestI=0, bestD=Infinity;
+    for (let i=0;i<thresholds.length;i++){
+      const d = Math.abs(thresholds[i]-thr);
+      if (d<bestD){ bestD=d; bestI=i; }
+    }
+    return bestI;
+  }
+
+  async function getSlice(ageInfo, name, thrIdx){
+    const {dir, shapes, n_nodes} = ageInfo;
+    const m = getMeta(shapes, name);
+    if (!m.file || !m.dtype) throw new Error(`missing meta: ${name}`);
+  
+    const bpe = bytesPer(m.dtype);
+    const rowBytes = n_nodes * bpe;
+  
+    const shp = Array.isArray(m.shape) ? m.shape : [];
+    let offset = 0;
+    let length = rowBytes;
+  
+    // 形状チェック＆offset計算
+    if (shp.length === 2){
+      const [n_thr, n_col] = shp;
+      if (n_col !== n_nodes){
+        console.warn(`[getSlice] shape mismatch: ${name} shape=${shp} n_nodes=${n_nodes}`);
+      }
+      if (thrIdx < 0 || thrIdx >= n_thr){
+        throw new Error(`[getSlice] thrIdx out of range for ${name}: thrIdx=${thrIdx} n_thr=${n_thr}`);
+      }
+      offset = thrIdx * rowBytes;
+    } else if (shp.length === 1){
+      const [n_col] = shp;
+      if (n_col !== n_nodes){
+        console.warn(`[getSlice] shape mismatch(1D): ${name} shape=${shp} n_nodes=${n_nodes}`);
+      }
+      // 1次元はthrIdxを無視して先頭から読む
+      offset = 0;
+    } else {
+      console.warn(`[getSlice] unknown shape for ${name}:`, shp);
+      offset = 0;
+    }
+  
+    const key = (shp.length === 2)
+      ? `${dir}/${name}/thr${thrIdx}`
+      : `${dir}/${name}/1d`;
+  
+    if (sliceCache.has(key)) return sliceCache.get(key);
+  
+    const url = `${dir}/${m.file}`;
+    const arr = await fetchArraySlice(url, m.dtype, offset, length);
+    sliceCache.set(key, arr);
+    return arr;
+  }
+  
+
+  // ---------- Route reconstruction (vidSeq + edgeSeq) ----------
+  function reconstruct(predVid, predEdgeId, startVid, superVid, maxSteps=500000){
+    const edgeSeq = [];
+    const vidSeq = [startVid];
+    let cur = startVid;
+    for (let step=0; step<maxSteps; step++){
+      const p = predVid[cur];
+      if (p === -1) break;
+      if (p === superVid) break;
+      if (p < 0 || p >= superVid) break;
+      edgeSeq.push(predEdgeId[cur]);
+      vidSeq.push(p);
+      cur = p;
+    }
+    return {vidSeq, edgeSeq};
+  }
+
+  // ---------- Geometry choose: use only the part actually used by the route ----------
+  function pickPartByEndpoints(edgeID, curPt, nextPt){
+    const parts = edgeSegsById.get(edgeID);
+    if (!parts || parts.length===0) return null;
+
+    let best=null, bestScore=Infinity, rev=false;
+    for (const part of parts){
+      if (!part || part.length<2) continue;
+      const a=part[0], b=part[part.length-1];
+      const s1 = dist2(a,curPt) + dist2(b,nextPt);
+      const s2 = dist2(b,curPt) + dist2(a,nextPt);
+      if (s1<bestScore){ bestScore=s1; best=part; rev=false; }
+      if (s2<bestScore){ bestScore=s2; best=part; rev=true; }
+    }
+    if (!best) return null;
+    const coords = rev ? best.slice().reverse() : best.slice();
+    coords[0]=curPt;
+    coords[coords.length-1]=nextPt;
+    return coords;
+  }
+
+  // Build route geometry + per-step chosen coords (for risk overlay)
+  function buildRoute(edgeSeq, vidSeq){
+    const lines=[];
+    let curLine=[];
+    const stepParts=[]; // [{edgeID, coords4326}...]
+
+    const flush=()=>{ if (curLine.length>=2) lines.push(curLine); curLine=[]; };
+
+    for (let i=0;i<edgeSeq.length;i++){
+      const eid = Number(edgeSeq[i])|0;
+      const vCur = vidSeq[i];
+      const vNext = vidSeq[i+1];
+      if (vNext===undefined) break;
+      const curPt=[lonArr[vCur], latArr[vCur]];
+      const nextPt=[lonArr[vNext], latArr[vNext]];
+
+      let seg = pickPartByEndpoints(eid, curPt, nextPt);
+      if (!seg){
+        // last resort: avoid "gap"
+        seg = [curPt, nextPt];
+      }
+
+      stepParts.push({ edgeID: eid, coords: seg });
+
+      if (curLine.length===0){
+        curLine = seg.slice();
+      } else {
+        const last = curLine[curLine.length-1];
+        if (samePoint(last, seg[0], TOL_JOIN)){
+          for (let k=1;k<seg.length;k++) curLine.push(seg[k]);
+        } else {
+          flush();
+          curLine = seg.slice();
+        }
+      }
+    }
+    flush();
+
+    if (lines.length===0) return {geom:null, stepParts};
+
+    const geom4326 = (lines.length===1) ? new ol.geom.LineString(lines[0]) : new ol.geom.MultiLineString(lines);
+    const geom3857 = geom4326.transform("EPSG:4326","EPSG:3857");
+    return {geom: geom3857, stepParts};
+  }
+
+  function addPointLonLat(lon, lat, kind, label=""){
+    const f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([lon,lat])) });
+    f.set("kind", kind);
+    f.set("label", label);
+    pointSource.addFeature(f);
+  }
+
+  function addRoute(routeType, edgeSeq, vidSeq){
+    const r = buildRoute(edgeSeq, vidSeq);
+    if (!r.geom) return {ok:false, stepParts: r.stepParts};
+
+    const f = new ol.Feature({ geometry: r.geom });
+    f.set("routeType", routeType);
+    routeSource.addFeature(f);
+    return {ok:true, stepParts: r.stepParts};
+  }
+
+  function addDestMarker(rootNodeID, label){
+    const vid = nodeID2Vid.get(rootNodeID|0);
+    if (vid===undefined) return;
+    addPointLonLat(lonArr[vid], latArr[vid], "dest", label);
+  }
+
+  function fitToAll(){
+    const ex = ol.extent.createEmpty();
+    for (const src of [routeSource, riskSource, pointSource]){
+      src.forEachFeature((f)=>ol.extent.extend(ex, f.getGeometry().getExtent()));
+    }
+    if (!ol.extent.isEmpty(ex)) map.getView().fit(ex, {padding:[60,60,60,60], duration:150, maxZoom: 16});
+  }
+
+  // ---------- Risk overlay only along chosen route parts ----------
+  function edgeRiskClass(attr, isOld){
+    const count = Number(attr?.count ?? 0);
+    const hasFlood = count > 0;
+    const fallPct = isOld ? Number(attr?.Rfall_old_pct ?? 0) : Number(attr?.Rfall_young_pct ?? 0);
+    const hasFall = fallPct > 0;
+    if (hasFlood && hasFall) return "BOTH";
+    if (hasFlood) return "FLOOD";
+    if (hasFall) return "FALL";
+    return null;
+  }
+
+  function addRiskFromStepParts(stepParts, dashed, isOld){
+    // merge consecutive same riskType to reduce fragmentation
+    let accType=null;
+    let accCoords=null;
+    let accEdgeID=null;
+    let accAttr=null;
+
+    const flush = () => {
+      if (!accType || !accCoords || accCoords.length<2) { accType=null; accCoords=null; accEdgeID=null; accAttr=null; return; }
+      const geom = new ol.geom.LineString(accCoords).transform("EPSG:4326","EPSG:3857");
+      const f = new ol.Feature({ geometry: geom });
+      f.set("kind","risk");
+      f.set("riskType", accType);
+      f.set("dashed", dashed);
+
+      // attrs for popup
+      const floodCount = Number(accAttr?.count ?? 0);
+      const floodPct = Number.isFinite(Number(accAttr?.flood_ratio_pct))
+        ? Number(accAttr?.flood_ratio_pct)
+        : (floodCount/24.0*100.0);
+
+      const fallPct = isOld ? Number(accAttr?.Rfall_old_pct ?? 0) : Number(accAttr?.Rfall_young_pct ?? 0);
+
+      f.set("floodCount", floodCount);
+      f.set("floodPct", floodPct);
+      f.set("fallPct", fallPct);
+
+      f.set("rf_width_pct", Number(accAttr?.rf_width_pct ?? 0));
+      f.set("rf_base_pct", Number(accAttr?.rf_base_pct ?? 0));
+      f.set("rf_slope_pct", Number(accAttr?.rf_slope_pct ?? 0));
+      f.set("rf_fence_pct", Number(accAttr?.rf_fence_pct ?? 0));
+
+      riskSource.addFeature(f);
+
+      accType=null; accCoords=null; accEdgeID=null; accAttr=null;
+    };
+
+    for (const sp of stepParts){
+      const eid = sp.edgeID|0;
+      const attr = edgeAttrById.get(eid);
+      if (!attr) { flush(); continue; }
+
+      const cls = edgeRiskClass(attr, isOld);
+      if (!cls) { flush(); continue; }
+
+      const coords = sp.coords;
+      if (!coords || coords.length<2) { flush(); continue; }
+
+      if (accType === cls){
+        // join
+        if (accCoords && samePoint(accCoords[accCoords.length-1], coords[0], TOL_JOIN)){
+          for (let k=1;k<coords.length;k++) accCoords.push(coords[k]);
+        } else {
+          flush();
+          accType = cls;
+          accCoords = coords.slice();
+          accEdgeID = eid;
+          accAttr = attr;
+        }
+      } else {
+        flush();
+        accType = cls;
+        accCoords = coords.slice();
+        accEdgeID = eid;
+        accAttr = attr;
+      }
+    }
+    flush();
+  }
+
+  function buildRiskMessage(feature){
+    const rtype = feature.get("riskType");
+    const lines = [];
+
+    const c = Number(feature.get("floodCount") ?? 0);
+    const p = Number(feature.get("floodPct") ?? 0);
+    if (rtype==="FLOOD" || rtype==="BOTH"){
+      if (c>0) lines.push(`浸水の危険性: ${c.toFixed(0)}/24 (${p.toFixed(1)}%)`);
+    }
+
+    const fallPct = Number(feature.get("fallPct") ?? 0);
+    if ((rtype==="FALL" || rtype==="BOTH") && fallPct>0){
+      lines.push("転落の危険性");
+
+      const w = Number(feature.get("rf_width_pct") ?? 0);
+      const b = Number(feature.get("rf_base_pct") ?? 0);
+      const s = Number(feature.get("rf_slope_pct") ?? 0);
+      const f = Number(feature.get("rf_fence_pct") ?? 0);
+
+      if (w>0) lines.push("・道路幅が狭く、水路との距離を十分に確保できない可能性があります");
+      if (b>0) lines.push("・水路・河川に近接しており、転落するリスクが存在する可能性が高いです");
+      if (s>0) lines.push("・道路に傾斜があり、歩行安定性を低減させる可能性があります");
+      if (f>0) lines.push("・転落防止の防護柵の有無に注意してください");
+    }
+
+    if (lines.length===0) lines.push("リスク情報はありません。");
+    return lines.join("\n");
+  }
+
+  // Single click -> popup (NO pan)
+  map.on("singleclick", (evt) => {
+    let picked=null;
+    map.forEachFeatureAtPixel(evt.pixel, (feature) => {
+      if (feature && feature.get("kind")==="risk"){ picked=feature; return true; }
+      return false;
+    });
+
+    if (!picked){
+      hidePopup();
+      return;
+    }
+
+    highlightSource.clear();
+    const hf = new ol.Feature({ geometry: picked.getGeometry().clone() });
+    hf.set("riskType", picked.get("riskType"));
+    highlightSource.addFeature(hf);
+
+    const rtype = picked.get("riskType");
+    popupTitleEl.textContent =
+      (rtype==="BOTH") ? "浸水 + 転落の危険性" :
+      (rtype==="FLOOD") ? "浸水の危険性" :
+      (rtype==="FALL") ? "転落の危険性" : "リスク情報";
+
+    popupContentEl.innerHTML = `<pre style="margin:0; white-space:pre-wrap;">${buildRiskMessage(picked)}</pre>`;
+
+    popupOverlay.setPosition(evt.coordinate);
+    popupEl.style.display="block";
+  });
+
+  // ---------- UI ----------
+  function clearAll(){
+    routeSource.clear();
+    riskSource.clear();
+    pointSource.clear();
+    highlightSource.clear();
+    hidePopup();
+    lastPick = null; // ★追加：最後の出発点を忘れる
+    resultEl.textContent = "クリアしました。地図をダブルクリックしてください。";
+  }
+  clearBtn.addEventListener("click", clearAll);
+  
+  // ラベル表示はドラッグ中に追従
+  thrRange.addEventListener("input", ()=> thrLabel.textContent = Number(thrRange.value).toFixed(1));
+  
+  // ---------- options (mutually exclusive) ----------
+  const optComposite = document.getElementById("optComposite");
+  const optRfallOnly = document.getElementById("optRfallOnly");
+  
+  function ensureExclusive(changed){
+    if (!optComposite || !optRfallOnly) return;
+  
+    if (changed === "composite") {
+      optComposite.checked = true;
+      optRfallOnly.checked = false;
+    } else {
+      optComposite.checked = false;
+      optRfallOnly.checked = true;
+    }
+  }
+  
+  
+  async function rerunIfPicked(){
+    if (!lastPick) return;
+    await runFromPick(
+      lastPick.lon, lastPick.lat, lastPick.v0,
+      lastPick.startIsShelterNode, lastPick.startShelterNm
+    );
+  }
+
+  
+  if (optComposite && optRfallOnly){
+    optComposite.addEventListener("change", async ()=>{
+      // チェックを外して「どっちもOFF」を防ぐ
+      if (!optComposite.checked){
+        optComposite.checked = true;
+        return;
+      }
+      ensureExclusive("composite");
+      await rerunIfPicked();
+    });
+  
+    optRfallOnly.addEventListener("change", async ()=>{
+      if (!optRfallOnly.checked){
+        optRfallOnly.checked = true;
+        return;
+      }
+      ensureExclusive("rfall");
+      await rerunIfPicked();
+    });
+  }
+  
+  // ★追加：安全度を「変更し終えた」タイミングで再描画（重くならない）
+  thrRange.addEventListener("change", async ()=>{
+    if (!lastPick) return;
+    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0);
+  });
+  
+  // ★追加：年齢変更で、同じ出発点のまま再描画
+  ageSelect.addEventListener("change", async ()=>{
+    if (!lastPick) return;
+    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0);
+  });
+  
+
+
+
+
+  // ---------- rerun support (age/thr change without re-dblclick) ----------
+  let lastPick = null;     // { lon, lat, v0 }
+  let runToken = 0;        // to cancel older runs
+  
+  async function runFromPick(lon, lat, v0, startIsShelterNode, startShelterNm){
+    const myToken = ++runToken;
+  
+    hidePopup();
+  
+    try{
+      if (v0 < 0) return;
+  
+      const age = Number(ageSelect.value);
+      const thr = Number(thrRange.value);
+      const isOld = age >= 65;
+  
+      // reset visuals
+      routeSource.clear(); riskSource.clear(); pointSource.clear(); highlightSource.clear();
+  
+      // clicked point & start point
+      addPointLonLat(lon, lat, "click", "");
+      addPointLonLat(lonArr[v0], latArr[v0], "start", "S");
+  
+      // load age data
+      const ageInfo = await loadShapesForAge(age);
+      if (myToken !== runToken) return; // canceled by newer request
+  
+      const thrIdx = pickThrIdx(ageInfo.thresholds, thr);
+      const thrActual = ageInfo.thresholds[thrIdx];
+  
+      async function runOne(modeName, thrIdxUse){
+        const dict = {
+          "global_psafe": ["dist_global_psafe","root_global_psafe","pred_vid_global_psafe","pred_edgeid_global_psafe"],
+          "muni_psafe":   ["dist_muni_psafe","root_muni_psafe","pred_vid_muni_psafe","pred_edgeid_muni_psafe"],
+          "global_rfall": ["dist_global_rfall","root_global_rfall","pred_vid_global_rfall","pred_edgeid_global_rfall"],
+          "muni_rfall":   ["dist_muni_rfall","root_muni_rfall","pred_vid_muni_rfall","pred_edgeid_muni_rfall"],
+        }[modeName];
+  
+        const [dN,rN,pvN,peN] = dict;
+  
+        const distArr = await getSlice(ageInfo, dN, thrIdxUse);
+        const rootArr = await getSlice(ageInfo, rN, thrIdxUse);
+        const predV   = await getSlice(ageInfo, pvN, thrIdxUse);
+        const predE   = await getSlice(ageInfo, peN, thrIdxUse);
+  
+        if (myToken !== runToken) return {ok:false, dist:Infinity, root:-1, edgeSeq:null, vidSeq:null};
+  
+        const dist = distArr[v0];
+        const root = rootArr[v0];
+        if (!Number.isFinite(dist) || root===-1){
+          return {ok:false, dist:Infinity, root:-1, edgeSeq:null, vidSeq:null};
+        }
+        const {vidSeq, edgeSeq} = reconstruct(predV, predE, v0, ageInfo.superVid);
+        return {ok:true, dist:Number(dist), root:Number(root), edgeSeq, vidSeq};
+      }
+  
+      const lines = [];
+      lines.push(`年齢：${age}歳 / 期待安全度：${thr.toFixed(1)}`);
+	  if (startIsShelterNode){
+		lines.push("※避難所そのもの（または避難所に非常に近い地点）を指定しています。");
+		if (startShelterNm) lines.push(`  指定された避難所：${startShelterNm}`);
+		lines.push("  避難時間が0分となる場合があります。");
+	  }
+
+ 
+      // ★オプション：転落回避ルートを最初から表示するモード
+	  const rfallOnlyMode = (optRfallOnly && optRfallOnly.checked);
+	  
+	  if (rfallOnlyMode){
+	  lines.push("表示モード：転落リスク回避経路（浸水は考慮しません）");
+	  
+	  // CA/CB を最初から表示（※thrIdxは使うが、あなたのデータ仕様上ほぼ同じでOK）
+	  const outCA = await runOne("muni_rfall", thrIdx);
+	  const outCB = await runOne("global_rfall", thrIdx);
+	  
+	  if (outCA.ok || outCB.ok){
+	 	 if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
+	 	 lines.push("CA と CB は同一経路 → CA のみ表示");
+	 	 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
+	 	 addDestMarker(outCA.root, "CA");
+	 	 addRiskFromStepParts(r.stepParts, false, isOld); // CA/CB は実線（dashed=false）
+	 	 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+	 	 } else {
+	 	 if (outCA.ok){
+	 		 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
+	 		 addDestMarker(outCA.root, "CA");
+	 		 addRiskFromStepParts(r.stepParts, false, isOld);
+	 		 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+	 	 } else lines.push("CA（同自治体）: 到達不能");
+	  
+	 	 if (outCB.ok){
+	 		 const r = addRoute("CB", outCB.edgeSeq, outCB.vidSeq);
+	 		 addDestMarker(outCB.root, "CB");
+	 		 addRiskFromStepParts(r.stepParts, false, isOld);
+	 		 lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
+	 	 } else lines.push("CB（境界なし）: 到達不能");
+	 	 }
+	  
+	 	 lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+	 	 resultEl.textContent = lines.join("\n");
+	 	 fitToAll();
+	 	 return;
+	  }
+	  
+	  // 転落回避できない → A0/B0（安全度=0.0）を表示
+	  lines.push("転落回避（CA/CB）が到達不能 → A0/B0（安全度=0.0）を表示");
+	  const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
+	  const outA0 = await runOne("muni_psafe", thrIdx0);
+	  const outB0 = await runOne("global_psafe", thrIdx0);
+	  
+	  const showA0B0 = (routeType, out, destLabel) => {
+	 	 const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
+	 	 addDestMarker(out.root, destLabel);
+	 	 addRiskFromStepParts(r.stepParts, true, isOld); // A0/B0 は破線（dashed=true）
+	  };
+	  
+	  if (outA0.ok || outB0.ok){
+	 	 if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
+	 	 lines.push("A0 と B0 は同一経路 → A0 のみ表示");
+	 	 showA0B0("A0", outA0, "A0");
+	 	 lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+	 	 } else {
+	 	 if (outA0.ok){
+	 		 showA0B0("A0", outA0, "A0");
+	 		 lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+	 	 } else lines.push("A0（同自治体）: 到達不能");
+	  
+	 	 if (outB0.ok){
+	 		 showA0B0("B0", outB0, "B0");
+	 		 lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
+	 	 } else lines.push("B0（境界なし）: 到達不能");
+	 	 }
+	  
+	 	 lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+	 	 resultEl.textContent = lines.join("\n");
+	 	 fitToAll();
+	 	 return;
+	  }
+	  
+	  resultEl.textContent = "到達可能な経路が見つかりませんでした。";
+	  return;
+	  }
+	  
+  
+      // A/B
+      const outA = await runOne("muni_psafe", thrIdx);
+      const outB = await runOne("global_psafe", thrIdx);
+      if (myToken !== runToken) return;
+  
+      const showRoute = (routeType, out, destLabel) => {
+        const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
+        addDestMarker(out.root, destLabel);
+  
+        // dashed for A/B/A0/B0, solid for CA/CB
+        const dashed = (routeType==="A" || routeType==="B" || routeType==="A0" || routeType==="B0");
+        addRiskFromStepParts(r.stepParts, dashed, isOld);
+      };
+  
+      if (outA.ok || outB.ok){
+        if (outA.ok && outB.ok && sameSeq(outA.edgeSeq, outB.edgeSeq)){
+          lines.push("A と B は同一経路 → A（推奨）のみ表示");
+          showRoute("A", outA, "A");
+          lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
+        } else {
+          if (outA.ok){
+            showRoute("A", outA, "A");
+            lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
+          } else {
+            lines.push("A（同自治体）: 到達不能");
+          }
+          if (outB.ok){
+            showRoute("B", outB, "B");
+            lines.push(`B（境界なし）: ${formatMinutes(outB.dist)} / 避難所：${shelterName(outB.root) || "（名称不明）"}`);
+          } else {
+            lines.push("B（境界なし）: 到達不能");
+          }
+        }
+        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        resultEl.textContent = lines.join("\n");
+        fitToAll();
+        return;
+      }
+	  
+  
+      // CA/CB
+      lines.push("A/B が到達不能 → CA/CB（転落回避）を表示");
+      const outCA = await runOne("muni_rfall", thrIdx);
+      const outCB = await runOne("global_rfall", thrIdx);
+      if (myToken !== runToken) return;
+  
+      if (outCA.ok || outCB.ok){
+        if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
+          lines.push("CA と CB は同一経路 → CA のみ表示");
+          showRoute("CA", outCA, "CA");
+          lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+        } else {
+          if (outCA.ok){
+            showRoute("CA", outCA, "CA");
+            lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+          } else {
+            lines.push("CA（同自治体）: 到達不能");
+          }
+          if (outCB.ok){
+            showRoute("CB", outCB, "CB");
+            lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
+          } else {
+            lines.push("CB（境界なし）: 到達不能");
+          }
+        }
+        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        resultEl.textContent = lines.join("\n");
+        fitToAll();
+        return;
+      }
+  
+      // A0/B0 (thr=0)
+      lines.push("CA/CB も到達不能 → A0/B0（安全度=0.0）を表示");
+      const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
+      const outA0 = await runOne("muni_psafe", thrIdx0);
+      const outB0 = await runOne("global_psafe", thrIdx0);
+      if (myToken !== runToken) return;
+  
+      if (outA0.ok || outB0.ok){
+        if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
+          lines.push("A0 と B0 は同一経路 → A0 のみ表示");
+          showRoute("A0", outA0, "A0");
+          lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+        } else {
+          if (outA0.ok){
+            showRoute("A0", outA0, "A0");
+            lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+          } else lines.push("A0（同自治体）: 到達不能");
+          if (outB0.ok){
+            showRoute("B0", outB0, "B0");
+            lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
+          } else lines.push("B0（境界なし）: 到達不能");
+        }
+        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        resultEl.textContent = lines.join("\n");
+        fitToAll();
+        return;
+      }
+  
+      resultEl.textContent = "到達可能な経路が見つかりませんでした。";
+  
+    } catch(err){
+      console.error(err);
+      logStatus("ERROR: " + (err?.message || String(err)));
+    }
+  }
+  
+
+
+
+  // ---------- dblclick -> compute ----------
+  map.on("dblclick", async (evt) => {
+    evt.preventDefault();
+    hidePopup();
+  
+    try{
+      const [lon,lat] = ol.proj.toLonLat(evt.coordinate);
+      const v0 = nearestVid(lon,lat);
+      if (v0<0) return;
+	  // ★開始点が「避難所ノード」かどうか（nodes_wgs84.csv由来）
+	  const startIsShelterNode = (isShelterArr && isShelterArr[v0] === 1);
+	  const startNodeID = (nodeIdArr ? nodeIdArr[v0] : null);
+	  const startShelterNm = (startIsShelterNode && startNodeID != null) ? shelterName(startNodeID) : null;
+
+  
+      // ★ここで「最後の出発点」を保存
+      lastPick = { lon, lat, v0, startIsShelterNode, startShelterNm };
+  
+      // ★保存した出発点で実行（この関数は上で追加したやつ）
+      await runFromPick(lon, lat, v0, startIsShelterNode, startShelterNm);
+  
+    } catch(err){
+      console.error(err);
+      logStatus("ERROR: " + (err?.message || String(err)));
+    }
+  });
+  
+
+  // ---------- Init ----------
+  async function init(){
+    thrLabel.textContent = Number(thrRange.value).toFixed(1);
+
+    logStatus("Loading catalog.json ...");
+    catalog = await fetchJSON("./catalog.json");
+    let ages = (catalog.ages || [40]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+
+    ageSelect.innerHTML="";
+    for (const a of ages){
+      const opt=document.createElement("option");
+      opt.value=String(a);
+      opt.textContent=`${a}歳`;
+      ageSelect.appendChild(opt);
+    }
+    if (ages.includes(40)) ageSelect.value="40";
+
+    await loadShelterNames();
+    await loadNodesCSV();
+    await loadEdgeAttrs();
+    await loadEdgesAuto();
+
+    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()}. Double-click on the map.`);
+  }
+
+  init().catch(err=>{
+    console.error(err);
+    logStatus("ERROR: " + (err?.message || String(err)));
+  });
+
+})();
+</script>
+</body>
+</html>
