@@ -1131,7 +1131,7 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     hidePopup();
     lastPick = null;
     resultEl.textContent = "クリアしました。地図をダブルクリックしてください。";
-    setStateLine();
+    setStatusReady();
   }
   clearBtn.addEventListener("click", clearAll);
 
@@ -1465,7 +1465,7 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     if (ages.includes(40)) ageSelect.value="40";
 
     // 初期条件ライン
-    setCondLine(Number(ageSelect.value), Number(thrRange.value), (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合");
+    //setCondLine(Number(ageSelect.value), Number(thrRange.value), (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合");
 
     await loadShelterNames();
     await loadNodesCSV();
