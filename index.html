@@ -118,6 +118,7 @@ http://localhost:8000/
 ・本マップは避難時の安全を保証するものではありません。実際にご自身で経路を確認し、危険箇所の有無をご確認ください。
 ・データの都合により、未反映の道路や位置ずれ等の不整合が含まれる場合があります。
 ・マップの読み込み及び経路表示に時間がかかることがあります。
+・表示される避難時間は代表的な年齢を使った目安の時間です。あくまで参考情報としてご覧ください。
       </div>
     </div>
 
@@ -300,6 +301,12 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
   // --- 状態表示（クリック前は「表示条件」を出さない） ---
   let uiStatusMode = "loading"; // "loading" | "ready" | "cond"
   let uiCondText   = "";        // mode==="cond" のときだけ表示
+  
+  
+  function getAgeLabel(){
+    return ageSelect?.options?.[ageSelect.selectedIndex]?.textContent ?? `${ageSelect.value}歳`;
+  }
+
   
   function renderStatus(){
     if (uiStatusMode === "loading") {
@@ -1263,7 +1270,7 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       }
 
       const lines = [];
-      lines.push(`年齢：${age}歳 / 期待安全度：${thr.toFixed(1)}`);
+      lines.push(`年齢：${getAgeLabel()} / 期待安全度：${thr.toFixed(1)}`);
       if (startIsShelterNode){
         lines.push("※避難所そのもの（または避難所に非常に近い地点）を指定しています。");
         if (startShelterNm) lines.push(`  指定された避難所：${startShelterNm}`);
@@ -1466,16 +1473,31 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
 
     setStatusLoading();
     catalog = await fetchJSON("./catalog.json");
-    let ages = (catalog.ages || [40]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
 
-    ageSelect.innerHTML="";
-    for (const a of ages){
-      const opt=document.createElement("option");
-      opt.value=String(a);
-      opt.textContent=`${a}歳`;
+    // 年齢UIはレンジ表示（内部的には代表年齢フォルダを使う）
+    // value = 実際に読む age_XX（代表年齢）
+    const ageBuckets = [
+      { label: "6～10歳",   value: 10 },
+      { label: "11～60歳",  value: 40 },
+      { label: "61～65歳",  value: 65 },
+      { label: "66～70歳",  value: 70 },
+	  { label: "71～75歳",  value: 75 },
+      { label: "76～80歳",  value: 80 },
+      { label: "81～85歳",  value: 85 },
+      { label: "86～90歳",  value: 90 },
+    ];
+
+    ageSelect.innerHTML = "";
+    for (const b of ageBuckets){
+      const opt = document.createElement("option");
+      opt.value = String(b.value);      // ← ここが内部の代表年齢
+      opt.textContent = b.label;        // ← ここが画面表示
       ageSelect.appendChild(opt);
     }
-    if (ages.includes(40)) ageSelect.value="40";
+
+    // デフォルトは「11～60歳」
+    ageSelect.value = "40";
+
 
     // 初期条件ライン
     //setCondLine(Number(ageSelect.value), Number(thrRange.value), (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合");
