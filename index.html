@@ -1,24 +1,23 @@
 <!doctype html>
 <!--
-マップの開き方。WSL起動
+マップの開き方（ローカル）
 cd /path/to/web
 python -m http.server 8000
-任意のブラウザで以下のどちらかを指定
 http://localhost:8000/
-http://127.0.0.1:8000/
 -->
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>避難経路マップ（高島市周辺）</title>
+  <link rel="icon" href="data:,">
 
   <!-- OpenLayers -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@9.2.4/ol.css">
   <script src="https://cdn.jsdelivr.net/npm/ol@9.2.4/dist/ol.js"></script>
 
   <!-- FlatGeobuf (local) -->
-  <script src="./flatgeobuf.min.js"></script>
+  <script src="./flatgeobuf-geojson.min.js"></script>
 
   <style>
     html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif; }
@@ -37,6 +36,10 @@ http://127.0.0.1:8000/
     pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 
     details > summary { cursor: pointer; font-weight: 700; }
+
+    .note { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:10px; }
+    .warn { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 10px; }
+    .warn b { color: #9a3412; }
 
     /* Popup */
     .ol-popup {
@@ -83,10 +86,7 @@ http://127.0.0.1:8000/
       font-size:12px;
     }
     .popup-close:hover { background:#f3f4f6; }
-    details.details-inline{background:transparent;border:none;padding:0;margin:0;}
-  details.details-inline > summary{cursor:pointer; user-select:none;}
-  details.details-inline[open] > summary{margin-bottom:4px;}
-</style>
+  </style>
 </head>
 
 <body>
@@ -94,58 +94,61 @@ http://127.0.0.1:8000/
   <div id="panel">
     <h1>避難経路マップ（高島市周辺）</h1>
 
-    <div class="box" id="introBox">
+    <!-- 1) タイトル直下：短い概要＋免責 -->
+    <div class="note" id="introShort">
       <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
-本マップは、高島市周辺における避難経路決定の参考にしていただくためのマップです。
-リスクが小さい避難経路を表示する、経路のリスクを可視化することによって、避難中（ご自宅から避難所までの移動の際中）に被災することがなくなることを目的に作成したものです。ご自身の都合に適切な避難経路を選択するための一助になれば幸いです。
-表示された避難経路は必ずしも安全というわけではありません。表示された経路を実際にご自身で確認し、危険な箇所が有無をご確認ください。あくまで、ご自身で避難経路を考える際の参考としてご利用ください。
-また、データの都合上、反映されていない道路があったり、道路・水路が現実とは位置がずれていたりなどの不整合が存在しますことをご了承ください。
-詳細は下記詳細欄をご確認ください。
+本マップは、高島市周辺の避難経路を「安全性（危険の起きやすさ）」と「所要時間」の観点で可視化するための参考マップです。
+
+<b>重要（免責・注意）</b>
+・本マップは安全を保証するものではありません。実際の避難では、自治体の避難情報・現地状況（冠水、倒木、通行止め等）を最優先してください。
+・データの都合により、未反映の道路や位置ずれ等の不整合が含まれる場合があります。
       </div>
     </div>
 
+    <!-- 2) 使い方（デフォルト閉） -->
     <h2>使い方</h2>
     <div class="box">
-      <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
-ダブルクリックした地点に最も近い道路結節点（出発点）から、最寄りの避難所までの経路を表示します。
-年齢・期待安全度を切り替えると、同じ出発点のまま経路が更新されます。
-危険区間（赤/橙/紫）をクリックすると、リスク情報が表示されます。
-      </div>
+      <details>
+        <summary>クリックして開く</summary>
+        <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
+【短い手順】
+1. 年齢 と 期待安全度 を選びます
+2. 地図上をダブルクリックします（最寄りの道路結節点を出発点として計算します）
+3. 表示された経路と避難所名・所要時間を確認します
 
-      <!-- 詳細（デフォルトは閉） -->
-      <div style="margin-top:8px;">
-        <details class="details-inline">
-          <summary>詳細</summary>
-          <div class="muted" style="white-space:pre-wrap; line-height:1.6; margin-top:6px;">
-1) 地図上をダブルクリック → 出発点が決まります（Sマーク）。
-2) 経路が表示されます。必要に応じて年齢・期待安全度を変更してください。
-3) 経路上の色付き区間（赤/橙/紫）をクリック → その区間のリスク内訳を確認できます。
-4) 「リセット」で出発点と表示をクリアします。
-          </div>
-        </details>
-      </div>
+【詳しい説明】
+・ダブルクリック地点に最も近い道路結節点（交差点等）を出発点として、避難所までの経路を表示します。
+・道路（危険区間：赤/橙/紫）をクリックすると、区間ごとのリスク情報（浸水・転落）を確認できます。
+        </div>
+      </details>
     </div>
 
-<h2>表示</h2>
-	<div class="box">
-	  <details>
-		<summary>クリックして開く</summary>
+    <!-- 3) 表示の見方（経路分類・色・定義） -->
+    <h2>表示の見方</h2>
+    <div class="box">
+      <details>
+        <summary>クリックして開く</summary>
+        <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
+【経路の分類】
+A：同じ自治体内の避難所への経路（推奨）
+B：自治体境界を無視した場合の避難所への経路（市外を含む場合があります）
+CA：転落リスクのみを回避し、同自治体内の避難所へ到達する経路
+CB：転落リスクのみを回避し、すべての避難所へ到達する経路
+A0/B0：期待安全度=0.0（リスクを無視）での経路（最終手段）
 
-		<div style="margin-top:8px; display:grid; gap:8px;">
-		  <label><input type="checkbox" id="toggleRoutes" checked> 避難経路を表示</label>
-		  <label><input type="checkbox" id="toggleRisk" checked> 危険区間（赤/橙/紫）を表示</label>
-		  <label><input type="checkbox" id="toggleMarkers" checked> 出発点/避難所マーカーを表示</label>
-		</div>
+【マーカー】
+黒丸：指定地点（クリック地点）
+S：出発点
+A/B/CA/CB：目的地（避難所）
 
-		<div class="muted" style="margin-top:8px;">
-		  ※表示を切り替えるだけで、計算結果自体は変わりません。
-		</div>
-	  </details>
-	</div>
+【危険区間（赤/橙/紫）】
+経路上の危険区間をクリックすると、浸水・転落のリスク情報を表示します。
+※ここで示す「リスク」は研究上の指標であり、現実の安全を保証するものではありません。
+        </div>
+      </details>
+    </div>
 
-
-
-
+    <!-- 4) 設定 -->
     <h2>設定</h2>
     <div class="box controls">
       <div class="row">
@@ -167,39 +170,59 @@ http://127.0.0.1:8000/
       </div>
     </div>
 
-		<details id="optDetails">
-		  <summary>オプション</summary>
-		
-		  <div class="row" style="margin-top:8px;">
-			<label><input type="checkbox" id="optComposite" checked> 複合リスク回避経路</label>
-		  </div>
-		  <div class="row" style="margin-top:4px;">
-			<label><input type="checkbox" id="optRfallOnly"> 転落リスク回避経路</label>
-		  </div>
-		
-		  <div style="margin-top:8px; font-size:0.9em; opacity:0.85;">
-			「転落リスク回避経路」を選ぶと、浸水は考慮せず、転落リスクがある道路を避ける経路を優先して表示します。
-		  </div>
-		</details>
+    <!-- 5) オプション -->
+    <h2>経路の基準</h2>
+    <div class="box">
+      <details id="optDetails">
+        <summary>オプション（クリックして開く）</summary>
 
-    <h2>結果</h2>
+        <div class="row" style="margin-top:8px;">
+          <label><input type="checkbox" id="optComposite" checked> 複合リスク回避（浸水＋転落）</label>
+        </div>
+        <div class="row" style="margin-top:4px;">
+          <label><input type="checkbox" id="optRfallOnly"> 転落リスク回避（転落のみ）</label>
+        </div>
+
+        <div class="muted" style="margin-top:8px; line-height:1.5;">
+「転落リスク回避」を選ぶと、浸水は考慮せず、転落リスクがある道路を避ける経路を優先して表示します。
+        </div>
+      </details>
+    </div>
+
+    <!-- 6) 経路の情報（旧：結果） -->
+    <h2>経路の案内</h2>
     <div class="box">
       <pre id="result">地図をダブルクリックしてください。</pre>
     </div>
 
-    <h2>ステータス</h2>
+    <!-- 7) ステータス（ユーザー向けに整理） -->
+    <h2>状態</h2>
     <div class="box">
-      <pre id="status">Initializing...</pre>
+      <pre id="status">データ読み込み中…</pre>
     </div>
 
+    <!-- 8) 詳細説明欄（長文はこちらへ） -->
     <h2>詳細</h2>
     <div class="box">
       <details>
-        <summary>詳細を表示</summary>
-        <div class="muted" style="margin-top:8px;">
-          （ここに論文URLや説明文を後で追加できます）
+        <summary>クリックして開く</summary>
+        <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
+【補足】
+・本マップは、避難中（ご自宅→避難所までの移動中）の被災リスク低減を目的として作成した参考マップです。
+・表示された経路は必ずしも安全ではありません。実際にご自身で経路を確認し、危険箇所の有無をご確認ください。
+・データの都合上、反映されていない道路があったり、道路・水路が現実とは位置がずれていたり等の不整合が存在する場合があります。
+
+（ここに論文URL、データ出典、更新日、連絡先などを追記できます）
         </div>
       </details>
+    </div>
+
+    <!-- 9) 連絡先（後で追記枠） -->
+    <h2>連絡先・フィードバック</h2>
+    <div class="box">
+      <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
+不具合報告・改善提案は GitHub の Issues 等でご連絡ください。（※後でリンクを追加）
+      </div>
     </div>
   </div>
 
@@ -231,28 +254,27 @@ http://127.0.0.1:8000/
   const popupContentEl = document.getElementById("popup-content");
   const popupCloseBtn = document.getElementById("popup-close");
 
-  let hasPick = false; // ダブルクリック後は「表示条件」を優先
-  const setStatusText = (s) => { statusEl.textContent = s; };
-  const setStatusLoading = () => { if (!hasPick) setStatusText("データ読み込み中…"); };
-  const setStatusReady = () => { if (!hasPick) setStatusText("地図をダブルクリックしてください"); };
-  const setStatusCond = (age, thr) => {
-    hasPick = true;
-    const t = Number(thr);
-    setStatusText(`表示条件：年齢 ${Number(age)}歳 / 期待安全度 ${t.toFixed(1)}`);
-  };
-  const setStatusError = (e) => { setStatusText(`ERROR: ${e}`); };
+  // --- 状態表示（ユーザー向けに整理） ---
+  let uiStateLine = "データ読み込み中…";
+  let uiCondLine  = "表示条件：未選択";
 
-  const logStatus = (msg) => {
-    if (typeof msg !== "string") { setStatusText(String(msg)); return; }
-    if (msg.startsWith("Loading")) { setStatusLoading(); return; }
-    if (msg.startsWith("Ready")) { setStatusReady(); return; }
-    if (msg.startsWith("WARN")) { console.warn(msg); return; }
-    if (msg.startsWith("ERROR")) { setStatusError(msg.replace(/^ERROR:\s*/, "")); return; }
-    setStatusText(msg);
-  };
+  function renderStatus(){
+    statusEl.textContent = `${uiStateLine}\n${uiCondLine}`;
+  }
+  function setStateLine(s){
+    uiStateLine = s;
+    renderStatus();
+  }
+  function setCondLine(age, thr, modeLabel){
+    uiCondLine = `表示条件：年齢 ${age}歳 / 期待安全度 ${Number(thr).toFixed(1)} / 基準：${modeLabel}`;
+    renderStatus();
+  }
+
+  // 初期表示
+  renderStatus();
 
   if (typeof window.ol === "undefined") {
-    logStatus("ERROR: OpenLayers(ol) failed to load.");
+    setStateLine("エラー：地図ライブラリ（OpenLayers）の読み込みに失敗しました。");
     return;
   }
 
@@ -266,16 +288,13 @@ http://127.0.0.1:8000/
     "B0": { color: "rgba(30, 30, 30, 0.45)", width: 5 },
   };
 
-  // 透明度70% -> alpha 0.30
   const RISK_COLOR = {
     "FLOOD": "rgba(220,0,0,0.30)",
     "FALL":  "rgba(255,140,0,0.30)",
     "BOTH":  "rgba(150,0,200,0.30)"
   };
 
-  // 破線を細かく
   const DASH_FINE = [2, 4];
-
   const TOL_JOIN = 5e-5;
 
   // ---------- Stores ----------
@@ -284,11 +303,16 @@ http://127.0.0.1:8000/
 
   let grid=null, gridMinLon=0, gridMinLat=0, gridCell=0.01;
 
-  // edge geometry: edgeID -> [part coords...]
   const edgeSegsById = new Map();
-  // edge attrs: edgeID -> obj
+  const edgePartIndex = new Map();
+  const routeResultCache = new Map();
+  const routeGeomCache = new Map();
+  const ROUTE_CACHE_MAX = 200;
+
+  function q6(x){ return Math.round(x * 1e6); }
+  function epKey(a,b){ return `${q6(a[0])},${q6(a[1])}|${q6(b[0])},${q6(b[1])}`; }
+
   const edgeAttrById = new Map();
-  // shelter names
   let shelterNameByNodeID = {};
 
   let catalog = null;
@@ -308,7 +332,6 @@ http://127.0.0.1:8000/
     }
   });
 
-  // ★重要：リスクは「ルートより上」に描く（A/Bの破線が隠れない）
   const riskSource = new ol.source.Vector();
   const riskLayer = new ol.layer.Vector({
     source: riskSource,
@@ -327,7 +350,6 @@ http://127.0.0.1:8000/
     }
   });
 
-  // selected highlight
   const highlightSource = new ol.source.Vector();
   const highlightLayer = new ol.layer.Vector({
     source: highlightSource,
@@ -368,12 +390,10 @@ http://127.0.0.1:8000/
     }
   });
 
-  // 0埋めの1桁年齢を読む
   function ageDirName(age){
     const a = Number(age);
-    return `age_${String(a).padStart(2, "0")}`; // 06,07,...,90
+    return `age_${String(a).padStart(2, "0")}`;
   }
-
 
   // ---------- Map ----------
   const map = new ol.Map({
@@ -381,8 +401,8 @@ http://127.0.0.1:8000/
     layers: [
       new ol.layer.Tile({ source: new ol.source.OSM() }),
       routeLayer,
-      riskLayer,       // ★ routeの上
-      highlightLayer,  // ★さらに上
+      riskLayer,
+      highlightLayer,
       pointLayer
     ],
     view: new ol.View({
@@ -390,44 +410,8 @@ http://127.0.0.1:8000/
       zoom: 11
     })
   });
-  
-  // ---------- Coverage polygon (data extent) ----------
-  async function addCoverageLayer(){
-    try{
-      // web/ 直下に置いた GeoJSON
-      const gj = await fetchJSON("./coverage_diff.geojson");
-  
-      const features = new ol.format.GeoJSON().readFeatures(gj, {
-        dataProjection: "EPSG:4326",
-        featureProjection: map.getView().getProjection(), // OSMなら通常EPSG:3857
-      });
-  
-      const coverageSource = new ol.source.Vector({ features });
-  
-      const coverageLayer = new ol.layer.Vector({
-        source: coverageSource,
-        style: new ol.style.Style({
-          fill: new ol.style.Fill({ color: "rgba(128,128,128,0.5)" }), // 50%灰
-          stroke: new ol.style.Stroke({ color: "rgba(80,80,80,0.8)", width: 2 }),
-        }),
-      });
-  
-      // ルートより下、ベース地図より上に置きたい場合（必要なら調整）
-      coverageLayer.setZIndex(1);
-  
-      map.addLayer(coverageLayer);
-  
-      logStatus("Ready. (coverage loaded)");
-    }catch(err){
-      console.error(err);
-      logStatus("WARN: coverage load failed: " + (err?.message || String(err)));
-    }
-  }
-  addCoverageLayer();
 
-  
-
-  // disable DoubleClickZoom (so dblclick used for start selection only)
+  // disable DoubleClickZoom
   (function disableDoubleClickZoom(){
     const DCZ = ol?.interaction?.DoubleClickZoom;
     if (!DCZ) return;
@@ -436,11 +420,11 @@ http://127.0.0.1:8000/
     rm.forEach((it)=>map.removeInteraction(it));
   })();
 
-  // ---------- Popup overlay (NO autoPan) ----------
+  // ---------- Popup overlay ----------
   const popupOverlay = new ol.Overlay({
     element: popupEl,
-    autoPan: false,         // ★これで「勝手に移動」を止める
-    stopEvent: true,        // ★popup上のクリックを地図に伝播させない
+    autoPan: false,
+    stopEvent: true,
     offset: [0, -12],
     positioning: "bottom-center"
   });
@@ -455,6 +439,7 @@ http://127.0.0.1:8000/
 
   // ---------- Utils ----------
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
   async function fetchText(url){
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error(`fetch failed: ${url} (${r.status})`);
@@ -494,7 +479,6 @@ http://127.0.0.1:8000/
     const dx=a[0]-b[0], dy=a[1]-b[1];
     return dx*dx+dy*dy;
   }
-
   function samePoint(a,b,tol){ return Math.abs(a[0]-b[0])<=tol && Math.abs(a[1]-b[1])<=tol; }
 
   // ---------- nearest node grid ----------
@@ -547,7 +531,7 @@ http://127.0.0.1:8000/
 
   // ---------- Load nodes ----------
   async function loadNodesCSV(){
-    logStatus("Loading nodes_wgs84.csv ...");
+    setStateLine("データ読み込み中…（道路結節点）");
     const txt = await fetchText("./nodes_wgs84.csv");
     const lines = txt.split("\n");
     const header = lines[0].trim().split(",");
@@ -587,16 +571,15 @@ http://127.0.0.1:8000/
       nodeID2Vid.set(nodeIdArr[k], k);
       k++;
 
-      if (k % 50000 === 0){ logStatus(`Loading nodes... ${k.toLocaleString()}`); await sleep(0); }
+      if (k % 50000 === 0){ await sleep(0); }
     }
     nNodes = k;
-    logStatus(`Loaded nodes: ${nNodes.toLocaleString()}`);
     buildGrid();
   }
 
   // ---------- Load edge attrs ----------
   async function loadEdgeAttrs(){
-    logStatus("Loading edge_attrs_by_edgeid.csv ...");
+    setStateLine("データ読み込み中…（道路属性）");
     const txt = await fetchText("./edge_attrs_by_edgeid.csv");
     const lines = txt.split("\n");
     const header = lines[0].trim().split(",");
@@ -634,11 +617,10 @@ http://127.0.0.1:8000/
         rf_width_pct: (iWidth>=0) ? Number(c[iWidth]) : 0,
       });
     }
-    logStatus(`Loaded edge attrs: ${edgeAttrById.size.toLocaleString()}`);
   }
 
   async function loadShelterNames(){
-    logStatus("Loading shelter_name_by_nodeID.json ...");
+    setStateLine("データ読み込み中…（避難所名）");
     shelterNameByNodeID = await fetchJSON("./shelter_name_by_nodeID.json");
   }
 
@@ -648,71 +630,81 @@ http://127.0.0.1:8000/
     let arr = edgeSegsById.get(edgeID);
     if (!arr){ arr=[]; edgeSegsById.set(edgeID, arr); }
     arr.push(coords);
-  }
 
-  async function loadEdgesGeoJSON(){
-    const t0 = performance.now();
-    logStatus("Loading edges_min.geojson ...");
-    const gj = await fetchJSON("./edges_min.geojson");
-    const feats = gj.features || [];
-    let n=0;
-    for (const f of feats){
-      const props = f.properties || {};
-      const edgeID = Number(props.edgeID);
-      const g = f.geometry;
-      if (!Number.isFinite(edgeID) || !g) continue;
-      if (g.type==="LineString") pushEdgeSegment(edgeID|0, g.coordinates);
-      else if (g.type==="MultiLineString") for (const part of g.coordinates) pushEdgeSegment(edgeID|0, part);
-      n++;
-      if (n % 50000 === 0){ logStatus(`Loading edges... ${n.toLocaleString()}`); await sleep(0); }
-    }
-    const dt = (performance.now()-t0)/1000;
-    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()} (GeoJSON, ${dt.toFixed(1)} s). Double-click on the map.`);
+    const a = coords[0];
+    const b = coords[coords.length-1];
+    let mp = edgePartIndex.get(edgeID);
+    if (!mp){ mp = new Map(); edgePartIndex.set(edgeID, mp); }
+    mp.set(epKey(a,b), {coords, rev:false});
+    mp.set(epKey(b,a), {coords, rev:true});
   }
 
   async function loadEdgesFGB(){
-    const t0 = performance.now();
-    logStatus("Loading edges_min.fgb ...");
-    if (!window.flatgeobuf?.geojson?.deserialize) throw new Error("flatgeobuf library not available.");
+    setStateLine("データ読み込み中…（道路形状）");
+    const fg = globalThis.flatgeobuf;
+    if (!fg) throw new Error("flatgeobuf not loaded");
 
-    const resp = await fetch("./edges_min.fgb", { cache: "no-store" });
-    if (!resp.ok) throw new Error(`fetch failed: edges_min.fgb (${resp.status})`);
+    const bboxAll = { minX: 135.764476, minY: 35.174088, maxX: 136.179544, maxY: 35.582073 };
+    edgeSegsById.clear();
 
-    const reader = resp.body.getReader();
-    const chunks = [];
-    let total = 0;
-    while(true){
-      const {value, done} = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      total += value.byteLength;
-      if (total > 5e6){ logStatus(`Loading edges_min.fgb ... ${(total/1e6).toFixed(1)} MB`); await sleep(0); }
+    let feats = 0;
+
+    if (fg.geojson?.deserialize) {
+      const resp = await fetch("./edges_min.fgb");
+      if (!resp.ok) throw new Error(`fetch failed: edges_min.fgb (${resp.status})`);
+      const buf = await resp.arrayBuffer();
+
+      for await (const f of fg.geojson.deserialize(buf)) {
+        feats++;
+        if (feats === 1) console.log("First FGB feature:", f);
+
+        const props = f.properties || {};
+        const edgeID = props.edgeID ?? props.edgeId ?? props.id;
+        if (edgeID == null) continue;
+
+        const g = f.geometry;
+        if (!g) continue;
+
+        if (g.type === "LineString") pushEdgeSegment(String(edgeID), g.coordinates);
+        else if (g.type === "MultiLineString") for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
+
+        if (feats % 50000 === 0) { await sleep(0); }
+      }
     }
-    const buf = new Uint8Array(total);
-    let off=0;
-    for (const c of chunks){ buf.set(c, off); off += c.byteLength; }
+    else if (typeof fg.deserialize === "function") {
+      const iter = fg.deserialize("./edges_min.fgb", bboxAll);
+      if (!iter || typeof iter[Symbol.asyncIterator] !== "function") {
+        throw new Error("flatgeobuf API mismatch (deserialize is not async iterable)");
+      }
+      for await (const f of iter) {
+        feats++;
+        if (feats === 1) console.log("First FGB feature:", f);
 
-    let n=0;
-    for await (const f of flatgeobuf.geojson.deserialize(buf)){
-      const props = f.properties || {};
-      const edgeID = Number(props.edgeID);
-      const g = f.geometry;
-      if (!Number.isFinite(edgeID) || !g) continue;
-      if (g.type==="LineString") pushEdgeSegment(edgeID|0, g.coordinates);
-      else if (g.type==="MultiLineString") for (const part of g.coordinates) pushEdgeSegment(edgeID|0, part);
-      n++;
-      if (n % 50000 === 0){ logStatus(`Loading edges_min.fgb ... ${n.toLocaleString()} feats`); await sleep(0); }
+        const props = f.properties || {};
+        const edgeID = props.edgeID ?? props.edgeId ?? props.id;
+        if (edgeID == null) continue;
+
+        const g = f.geometry;
+        if (!g) continue;
+
+        if (g.type === "LineString") pushEdgeSegment(String(edgeID), g.coordinates);
+        else if (g.type === "MultiLineString") for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
+
+        if (feats % 50000 === 0) { await sleep(0); }
+      }
+    } else {
+      throw new Error("No supported flatgeobuf API found");
     }
-    const dt = (performance.now()-t0)/1000;
-    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()} (FGB, ${dt.toFixed(1)} s). Double-click on the map.`);
   }
 
   async function loadEdgesAuto(){
-    try { await loadEdgesFGB(); }
-    catch(e){
-      console.warn("FGB failed -> fallback to GeoJSON:", e);
+    try {
+      await loadEdgesFGB();
+    } catch(e){
+      console.error("FGB load failed:", e);
       edgeSegsById.clear();
-      await loadEdgesGeoJSON();
+      setStateLine("エラー：道路形状（FGB）の読み込みに失敗しました。");
+      // GeoJSONへフォールバックしない（404を出さない）
     }
   }
 
@@ -729,7 +721,7 @@ http://127.0.0.1:8000/
   }
   async function fetchArraySlice(url, dtype, offsetBytes, lengthBytes){
     const headers = { "Range": `bytes=${offsetBytes}-${offsetBytes + lengthBytes - 1}` };
-    let r = await fetch(url, { headers, cache:"no-store" });
+    let r = await fetch(url, { headers, cache:"force-cache" });
     if (r.status === 206){
       const ab = await r.arrayBuffer();
       return makeTyped(dtype, ab);
@@ -750,11 +742,9 @@ http://127.0.0.1:8000/
 
   async function loadShapesForAge(age){
     if (ageCache.has(age)) return ageCache.get(age);
-	const dir = ageDirName(age);
-	const shapesUrl = `./${dir}/shapes.json`;
-	const shapes = await fetchJSON(shapesUrl);
-    //const dir = `./age_${age}`;
-    //const shapes = await fetchJSON(`${dir}/shapes.json`);
+    const dir = ageDirName(age);
+    const shapesUrl = `./${dir}/shapes.json`;
+    const shapes = await fetchJSON(shapesUrl);
 
     let thresholds=null;
     if (Array.isArray(shapes.thresholds)) thresholds = shapes.thresholds.map(Number);
@@ -789,22 +779,28 @@ http://127.0.0.1:8000/
   }
 
   async function getSlice(ageInfo, name, thrIdx){
-    const {dir, shapes, n_nodes, thresholds} = ageInfo;
+    const {dir, shapes, n_nodes} = ageInfo;
     const m = getMeta(shapes, name);
     if (!m.file || !m.dtype) throw new Error(`missing meta: ${name}`);
-    const key = `${dir}/${name}/thr${thrIdx}`;
+
+    const is2D = String(name).includes("psafe");
+    const thr = is2D ? (thrIdx ?? 0) : 0;
+
+    const key = `${dir}/${name}/thr${thr}`;
     if (sliceCache.has(key)) return sliceCache.get(key);
 
     const bpe = bytesPer(m.dtype);
     const rowBytes = n_nodes * bpe;
-    const offset = thrIdx * rowBytes;
+    const offset = is2D ? (thr * rowBytes) : 0;
+
     const url = `${dir}/${m.file}`;
     const arr = await fetchArraySlice(url, m.dtype, offset, rowBytes);
+
     sliceCache.set(key, arr);
     return arr;
   }
 
-  // ---------- Route reconstruction (vidSeq + edgeSeq) ----------
+  // ---------- Route reconstruction ----------
   function reconstruct(predVid, predEdgeId, startVid, superVid, maxSteps=500000){
     const edgeSeq = [];
     const vidSeq = [startVid];
@@ -821,10 +817,20 @@ http://127.0.0.1:8000/
     return {vidSeq, edgeSeq};
   }
 
-  // ---------- Geometry choose: use only the part actually used by the route ----------
   function pickPartByEndpoints(edgeID, curPt, nextPt){
     const parts = edgeSegsById.get(edgeID);
     if (!parts || parts.length===0) return null;
+
+    const mp = edgePartIndex.get(edgeID);
+    if (mp){
+      const ent = mp.get(epKey(curPt, nextPt));
+      if (ent && ent.coords){
+        const base = ent.rev ? ent.coords.slice().reverse() : ent.coords.slice();
+        base[0] = curPt;
+        base[base.length-1] = nextPt;
+        return base;
+      }
+    }
 
     let best=null, bestScore=Infinity, rev=false;
     for (const part of parts){
@@ -842,11 +848,10 @@ http://127.0.0.1:8000/
     return coords;
   }
 
-  // Build route geometry + per-step chosen coords (for risk overlay)
   function buildRoute(edgeSeq, vidSeq){
     const lines=[];
     let curLine=[];
-    const stepParts=[]; // [{edgeID, coords4326}...]
+    const stepParts=[];
 
     const flush=()=>{ if (curLine.length>=2) lines.push(curLine); curLine=[]; };
 
@@ -859,10 +864,7 @@ http://127.0.0.1:8000/
       const nextPt=[lonArr[vNext], latArr[vNext]];
 
       let seg = pickPartByEndpoints(eid, curPt, nextPt);
-      if (!seg){
-        // last resort: avoid "gap"
-        seg = [curPt, nextPt];
-      }
+      if (!seg) seg = [curPt, nextPt];
 
       stepParts.push({ edgeID: eid, coords: seg });
 
@@ -918,7 +920,7 @@ http://127.0.0.1:8000/
     if (!ol.extent.isEmpty(ex)) map.getView().fit(ex, {padding:[60,60,60,60], duration:150, maxZoom: 16});
   }
 
-  // ---------- Risk overlay only along chosen route parts ----------
+  // ---------- Risk overlay ----------
   function edgeRiskClass(attr, isOld){
     const count = Number(attr?.count ?? 0);
     const hasFlood = count > 0;
@@ -931,21 +933,18 @@ http://127.0.0.1:8000/
   }
 
   function addRiskFromStepParts(stepParts, dashed, isOld){
-    // merge consecutive same riskType to reduce fragmentation
     let accType=null;
     let accCoords=null;
-    let accEdgeID=null;
     let accAttr=null;
 
     const flush = () => {
-      if (!accType || !accCoords || accCoords.length<2) { accType=null; accCoords=null; accEdgeID=null; accAttr=null; return; }
+      if (!accType || !accCoords || accCoords.length<2) { accType=null; accCoords=null; accAttr=null; return; }
       const geom = new ol.geom.LineString(accCoords).transform("EPSG:4326","EPSG:3857");
       const f = new ol.Feature({ geometry: geom });
       f.set("kind","risk");
       f.set("riskType", accType);
       f.set("dashed", dashed);
 
-      // attrs for popup
       const floodCount = Number(accAttr?.count ?? 0);
       const floodPct = Number.isFinite(Number(accAttr?.flood_ratio_pct))
         ? Number(accAttr?.flood_ratio_pct)
@@ -964,7 +963,7 @@ http://127.0.0.1:8000/
 
       riskSource.addFeature(f);
 
-      accType=null; accCoords=null; accEdgeID=null; accAttr=null;
+      accType=null; accCoords=null; accAttr=null;
     };
 
     for (const sp of stepParts){
@@ -979,21 +978,18 @@ http://127.0.0.1:8000/
       if (!coords || coords.length<2) { flush(); continue; }
 
       if (accType === cls){
-        // join
         if (accCoords && samePoint(accCoords[accCoords.length-1], coords[0], TOL_JOIN)){
           for (let k=1;k<coords.length;k++) accCoords.push(coords[k]);
         } else {
           flush();
           accType = cls;
           accCoords = coords.slice();
-          accEdgeID = eid;
           accAttr = attr;
         }
       } else {
         flush();
         accType = cls;
         accCoords = coords.slice();
-        accEdgeID = eid;
         accAttr = attr;
       }
     }
@@ -1029,7 +1025,6 @@ http://127.0.0.1:8000/
     return lines.join("\n");
   }
 
-  // Single click -> popup (NO pan)
   map.on("singleclick", (evt) => {
     let picked=null;
     map.forEachFeatureAtPixel(evt.pixel, (feature) => {
@@ -1066,21 +1061,19 @@ http://127.0.0.1:8000/
     pointSource.clear();
     highlightSource.clear();
     hidePopup();
-    lastPick = null; // ★追加：最後の出発点を忘れる
+    lastPick = null;
     resultEl.textContent = "クリアしました。地図をダブルクリックしてください。";
+    setStateLine("準備完了：地図をダブルクリックしてください");
   }
   clearBtn.addEventListener("click", clearAll);
-  
-  // ラベル表示はドラッグ中に追従
+
   thrRange.addEventListener("input", ()=> thrLabel.textContent = Number(thrRange.value).toFixed(1));
-  
-  // ---------- options (mutually exclusive) ----------
+
   const optComposite = document.getElementById("optComposite");
   const optRfallOnly = document.getElementById("optRfallOnly");
-  
+
   function ensureExclusive(changed){
     if (!optComposite || !optRfallOnly) return;
-  
     if (changed === "composite") {
       optComposite.checked = true;
       optRfallOnly.checked = false;
@@ -1089,8 +1082,7 @@ http://127.0.0.1:8000/
       optRfallOnly.checked = true;
     }
   }
-  
-  
+
   async function rerunIfPicked(){
     if (!lastPick) return;
     await runFromPick(
@@ -1099,336 +1091,299 @@ http://127.0.0.1:8000/
     );
   }
 
-  
   if (optComposite && optRfallOnly){
     optComposite.addEventListener("change", async ()=>{
-      // チェックを外して「どっちもOFF」を防ぐ
-      if (!optComposite.checked){
-        optComposite.checked = true;
-        return;
-      }
+      if (!optComposite.checked){ optComposite.checked = true; return; }
       ensureExclusive("composite");
       await rerunIfPicked();
     });
-  
+
     optRfallOnly.addEventListener("change", async ()=>{
-      if (!optRfallOnly.checked){
-        optRfallOnly.checked = true;
-        return;
-      }
+      if (!optRfallOnly.checked){ optRfallOnly.checked = true; return; }
       ensureExclusive("rfall");
       await rerunIfPicked();
     });
   }
-  
-  // ★追加：安全度を「変更し終えた」タイミングで再描画（重くならない）
+
   thrRange.addEventListener("change", async ()=>{
     if (!lastPick) return;
-    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0);
+    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0, lastPick.startIsShelterNode, lastPick.startShelterNm);
   });
-  
-  // ★追加：年齢変更で、同じ出発点のまま再描画
+
   ageSelect.addEventListener("change", async ()=>{
     if (!lastPick) return;
-    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0);
+    await runFromPick(lastPick.lon, lastPick.lat, lastPick.v0, lastPick.startIsShelterNode, lastPick.startShelterNm);
   });
-  
 
+  // ---------- rerun support ----------
+  let lastPick = null;
+  let runToken = 0;
 
-
-
-  // ---------- rerun support (age/thr change without re-dblclick) ----------
-  let lastPick = null;     // { lon, lat, v0 }
-  let runToken = 0;        // to cancel older runs
-  
   async function runFromPick(lon, lat, v0, startIsShelterNode, startShelterNm){
     const myToken = ++runToken;
-  
     hidePopup();
-  
+
     try{
       if (v0 < 0) return;
-  
+
       const age = Number(ageSelect.value);
       const thr = Number(thrRange.value);
       const isOld = age >= 65;
-  
-      
 
-      // ステータス（表示条件）
-      setStatusCond(age, thr);
-// reset visuals
+      // 状態表示（現在条件）
+      const modeLabel = (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合";
+      setCondLine(age, thr, modeLabel);
+
       routeSource.clear(); riskSource.clear(); pointSource.clear(); highlightSource.clear();
-  
-      // clicked point & start point
+
       addPointLonLat(lon, lat, "click", "");
       addPointLonLat(lonArr[v0], latArr[v0], "start", "S");
-  
-      // load age data
+
       const ageInfo = await loadShapesForAge(age);
-      if (myToken !== runToken) return; // canceled by newer request
-  
+      if (myToken !== runToken) return;
+
       const thrIdx = pickThrIdx(ageInfo.thresholds, thr);
-      const thrActual = ageInfo.thresholds[thrIdx];
-  
+
       async function runOne(modeName, thrIdxUse){
+        const cacheKey = `${age}|${modeName}|${thrIdxUse}|${v0}`;
+        if (routeResultCache.has(cacheKey)) return routeResultCache.get(cacheKey);
+
         const dict = {
           "global_psafe": ["dist_global_psafe","root_global_psafe","pred_vid_global_psafe","pred_edgeid_global_psafe"],
           "muni_psafe":   ["dist_muni_psafe","root_muni_psafe","pred_vid_muni_psafe","pred_edgeid_muni_psafe"],
           "global_rfall": ["dist_global_rfall","root_global_rfall","pred_vid_global_rfall","pred_edgeid_global_rfall"],
           "muni_rfall":   ["dist_muni_rfall","root_muni_rfall","pred_vid_muni_rfall","pred_edgeid_muni_rfall"],
         }[modeName];
-  
+
         const [dN,rN,pvN,peN] = dict;
-  
-        const distArr = await getSlice(ageInfo, dN, thrIdxUse);
-        const rootArr = await getSlice(ageInfo, rN, thrIdxUse);
-        const predV   = await getSlice(ageInfo, pvN, thrIdxUse);
-        const predE   = await getSlice(ageInfo, peN, thrIdxUse);
-  
+
+        const [distArr, rootArr, predV, predE] = await Promise.all([
+          getSlice(ageInfo, dN, thrIdxUse),
+          getSlice(ageInfo, rN, thrIdxUse),
+          getSlice(ageInfo, pvN, thrIdxUse),
+          getSlice(ageInfo, peN, thrIdxUse),
+        ]);
+
         if (myToken !== runToken) return {ok:false, dist:Infinity, root:-1, edgeSeq:null, vidSeq:null};
-  
+
         const dist = distArr[v0];
         const root = rootArr[v0];
         if (!Number.isFinite(dist) || root===-1){
           return {ok:false, dist:Infinity, root:-1, edgeSeq:null, vidSeq:null};
         }
         const {vidSeq, edgeSeq} = reconstruct(predV, predE, v0, ageInfo.superVid);
-        return {ok:true, dist:Number(dist), root:Number(root), edgeSeq, vidSeq};
+        const out = {ok:true, dist:Number(dist), root:Number(root), edgeSeq, vidSeq};
+        routeResultCache.set(cacheKey, out);
+        if (routeResultCache.size > ROUTE_CACHE_MAX){
+          const firstKey = routeResultCache.keys().next().value;
+          routeResultCache.delete(firstKey);
+        }
+        return out;
       }
-  
+
       const lines = [];
       lines.push(`年齢：${age}歳 / 期待安全度：${thr.toFixed(1)}`);
-	  if (startIsShelterNode){
-		lines.push("※避難所そのもの（または避難所に非常に近い地点）を指定しています。");
-		if (startShelterNm) lines.push(`  指定された避難所：${startShelterNm}`);
-		lines.push("  避難時間が0分となる場合があります。");
-	  }
+      if (startIsShelterNode){
+        lines.push("※避難所そのもの（または避難所に非常に近い地点）を指定しています。");
+        if (startShelterNm) lines.push(`  指定された避難所：${startShelterNm}`);
+        lines.push("  避難時間が0分となる場合があります。");
+      }
 
- 
-      // ★オプション：転落回避ルートを最初から表示するモード
-	  const rfallOnlyMode = (optRfallOnly && optRfallOnly.checked);
-	  
-	  if (rfallOnlyMode){
-	  lines.push("表示モード：転落リスク回避経路（浸水は考慮しません）");
-	  
-	  // CA/CB を最初から表示（※thrIdxは使うが、あなたのデータ仕様上ほぼ同じでOK）
-	  const outCA = await runOne("muni_rfall", thrIdx);
-	  const outCB = await runOne("global_rfall", thrIdx);
-	  
-	  if (outCA.ok || outCB.ok){
-	 	 if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
-	 	 lines.push("CA と CB は同一経路 → CA のみ表示");
-	 	 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
-	 	 addDestMarker(outCA.root, "CA");
-	 	 addRiskFromStepParts(r.stepParts, false, isOld); // CA/CB は実線（dashed=false）
-	 	 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
-	 	 } else {
-	 	 if (outCA.ok){
-	 		 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
-	 		 addDestMarker(outCA.root, "CA");
-	 		 addRiskFromStepParts(r.stepParts, false, isOld);
-	 		 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
-	 	 } else lines.push("CA（同自治体）: 到達不能");
-	  
-	 	 if (outCB.ok){
-	 		 const r = addRoute("CB", outCB.edgeSeq, outCB.vidSeq);
-	 		 addDestMarker(outCB.root, "CB");
-	 		 addRiskFromStepParts(r.stepParts, false, isOld);
-	 		 lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
-	 	 } else lines.push("CB（境界なし）: 到達不能");
-	 	 }
-	  
-	 	 lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
-	 	 resultEl.textContent = lines.join("\n");
-	 	 fitToAll();
-	 	 return;
-	  }
-	  
-	  // 転落回避できない → A0/B0（安全度=0.0）を表示
-	  lines.push("転落回避（CA/CB）が到達不能 → A0/B0（安全度=0.0）を表示");
-	  const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
-	  const outA0 = await runOne("muni_psafe", thrIdx0);
-	  const outB0 = await runOne("global_psafe", thrIdx0);
-	  
-	  const showA0B0 = (routeType, out, destLabel) => {
-	 	 const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
-	 	 addDestMarker(out.root, destLabel);
-	 	 addRiskFromStepParts(r.stepParts, true, isOld); // A0/B0 は破線（dashed=true）
-	  };
-	  
-	  if (outA0.ok || outB0.ok){
-	 	 if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
-	 	 lines.push("A0 と B0 は同一経路 → A0 のみ表示");
-	 	 showA0B0("A0", outA0, "A0");
-	 	 lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
-	 	 } else {
-	 	 if (outA0.ok){
-	 		 showA0B0("A0", outA0, "A0");
-	 		 lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
-	 	 } else lines.push("A0（同自治体）: 到達不能");
-	  
-	 	 if (outB0.ok){
-	 		 showA0B0("B0", outB0, "B0");
-	 		 lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
-	 	 } else lines.push("B0（境界なし）: 到達不能");
-	 	 }
-	  
-	 	 lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
-	 	 resultEl.textContent = lines.join("\n");
-	 	 fitToAll();
-	 	 return;
-	  }
-	  
-	  resultEl.textContent = "到達可能な経路が見つかりませんでした。";
-	  return;
-	  }
-	  
-  
-      // A/B
+      const showRoute = (routeType, out, destLabel, dashedOverride=null) => {
+        const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
+        addDestMarker(out.root, destLabel);
+        const dashed = (dashedOverride !== null) ? dashedOverride
+          : (routeType==="A" || routeType==="B" || routeType==="A0" || routeType==="B0");
+        addRiskFromStepParts(r.stepParts, dashed, isOld);
+      };
+
+      const rfallOnlyMode = (optRfallOnly && optRfallOnly.checked);
+
+      // --- 転落のみモード ---
+      if (rfallOnlyMode){
+        lines.push("表示モード：転落リスク回避（浸水は考慮しません）");
+
+        const outCA = await runOne("muni_rfall", thrIdx);
+        const outCB = await runOne("global_rfall", thrIdx);
+
+        if (outCA.ok || outCB.ok){
+          if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
+            lines.push("CA と CB は同一経路 → CA のみ表示");
+            showRoute("CA", outCA, "CA", false);
+            lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+          } else {
+            if (outCA.ok){
+              showRoute("CA", outCA, "CA", false);
+              lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+            } else lines.push("CA（同自治体）: 到達不能");
+
+            if (outCB.ok){
+              showRoute("CB", outCB, "CB", false);
+              lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
+            } else lines.push("CB（境界なし）: 到達不能");
+          }
+
+          lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+          resultEl.textContent = lines.join("\n");
+          fitToAll();
+          setStateLine("準備完了：地図をダブルクリックしてください");
+          return;
+        }
+
+        // fallback to A0/B0
+        lines.push("転落回避（CA/CB）が到達不能 → A0/B0（期待安全度=0.0）を表示");
+        const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
+        const outA0 = await runOne("muni_psafe", thrIdx0);
+        const outB0 = await runOne("global_psafe", thrIdx0);
+
+        if (outA0.ok || outB0.ok){
+          if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
+            lines.push("A0 と B0 は同一経路 → A0 のみ表示");
+            showRoute("A0", outA0, "A0", true);
+            lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+          } else {
+            if (outA0.ok){
+              showRoute("A0", outA0, "A0", true);
+              lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+            } else lines.push("A0（同自治体）: 到達不能");
+
+            if (outB0.ok){
+              showRoute("B0", outB0, "B0", true);
+              lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
+            } else lines.push("B0（境界なし）: 到達不能");
+          }
+          lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+          resultEl.textContent = lines.join("\n");
+          fitToAll();
+          setStateLine("準備完了：地図をダブルクリックしてください");
+          return;
+        }
+
+        resultEl.textContent = "到達可能な経路が見つかりませんでした。";
+        setStateLine("準備完了：地図をダブルクリックしてください");
+        return;
+      }
+
+      // --- 複合（A/B → CA/CB → A0/B0） ---
       const outA = await runOne("muni_psafe", thrIdx);
       const outB = await runOne("global_psafe", thrIdx);
       if (myToken !== runToken) return;
-  
-      const showRoute = (routeType, out, destLabel) => {
-        const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
-        addDestMarker(out.root, destLabel);
-  
-        // dashed for A/B/A0/B0, solid for CA/CB
-        const dashed = (routeType==="A" || routeType==="B" || routeType==="A0" || routeType==="B0");
-        addRiskFromStepParts(r.stepParts, dashed, isOld);
-      };
-  
+
       if (outA.ok || outB.ok){
         if (outA.ok && outB.ok && sameSeq(outA.edgeSeq, outB.edgeSeq)){
           lines.push("A と B は同一経路 → A（推奨）のみ表示");
-          showRoute("A", outA, "A");
+          showRoute("A", outA, "A", true);
           lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
         } else {
           if (outA.ok){
-            showRoute("A", outA, "A");
+            showRoute("A", outA, "A", true);
             lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
-          } else {
-            lines.push("A（同自治体）: 到達不能");
-          }
+          } else lines.push("A（同自治体）: 到達不能");
+
           if (outB.ok){
-            showRoute("B", outB, "B");
+            showRoute("B", outB, "B", true);
             lines.push(`B（境界なし）: ${formatMinutes(outB.dist)} / 避難所：${shelterName(outB.root) || "（名称不明）"}`);
-          } else {
-            lines.push("B（境界なし）: 到達不能");
-          }
+          } else lines.push("B（境界なし）: 到達不能");
         }
         lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
+        setStateLine("準備完了：地図をダブルクリックしてください");
         return;
       }
-	  
-  
-      // CA/CB
+
       lines.push("A/B が到達不能 → CA/CB（転落回避）を表示");
       const outCA = await runOne("muni_rfall", thrIdx);
       const outCB = await runOne("global_rfall", thrIdx);
-      if (myToken !== runToken) return;
-  
+
       if (outCA.ok || outCB.ok){
         if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
           lines.push("CA と CB は同一経路 → CA のみ表示");
-          showRoute("CA", outCA, "CA");
+          showRoute("CA", outCA, "CA", false);
           lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
         } else {
           if (outCA.ok){
-            showRoute("CA", outCA, "CA");
+            showRoute("CA", outCA, "CA", false);
             lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
-          } else {
-            lines.push("CA（同自治体）: 到達不能");
-          }
+          } else lines.push("CA（同自治体）: 到達不能");
+
           if (outCB.ok){
-            showRoute("CB", outCB, "CB");
+            showRoute("CB", outCB, "CB", false);
             lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
-          } else {
-            lines.push("CB（境界なし）: 到達不能");
-          }
+          } else lines.push("CB（境界なし）: 到達不能");
         }
         lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
+        setStateLine("準備完了：地図をダブルクリックしてください");
         return;
       }
-  
-      // A0/B0 (thr=0)
-      lines.push("CA/CB も到達不能 → A0/B0（安全度=0.0）を表示");
+
+      lines.push("CA/CB も到達不能 → A0/B0（期待安全度=0.0）を表示");
       const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
       const outA0 = await runOne("muni_psafe", thrIdx0);
       const outB0 = await runOne("global_psafe", thrIdx0);
-      if (myToken !== runToken) return;
-  
+
       if (outA0.ok || outB0.ok){
         if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
           lines.push("A0 と B0 は同一経路 → A0 のみ表示");
-          showRoute("A0", outA0, "A0");
+          showRoute("A0", outA0, "A0", true);
           lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
         } else {
           if (outA0.ok){
-            showRoute("A0", outA0, "A0");
+            showRoute("A0", outA0, "A0", true);
             lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
           } else lines.push("A0（同自治体）: 到達不能");
+
           if (outB0.ok){
-            showRoute("B0", outB0, "B0");
+            showRoute("B0", outB0, "B0", true);
             lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
           } else lines.push("B0（境界なし）: 到達不能");
         }
         lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
+        setStateLine("準備完了：地図をダブルクリックしてください");
         return;
       }
-  
+
       resultEl.textContent = "到達可能な経路が見つかりませんでした。";
-  
+      setStateLine("準備完了：地図をダブルクリックしてください");
+
     } catch(err){
       console.error(err);
-      logStatus("ERROR: " + (err?.message || String(err)));
+      setStateLine("エラー：" + (err?.message || String(err)));
     }
   }
-  
 
-
-
-  // ---------- dblclick -> compute ----------
+  // ---------- dblclick ----------
   map.on("dblclick", async (evt) => {
     evt.preventDefault();
     hidePopup();
-  
+
     try{
       const [lon,lat] = ol.proj.toLonLat(evt.coordinate);
       const v0 = nearestVid(lon,lat);
       if (v0<0) return;
-	  // ★開始点が「避難所ノード」かどうか（nodes_wgs84.csv由来）
-	  const startIsShelterNode = (isShelterArr && isShelterArr[v0] === 1);
-	  const startNodeID = (nodeIdArr ? nodeIdArr[v0] : null);
-	  const startShelterNm = (startIsShelterNode && startNodeID != null) ? shelterName(startNodeID) : null;
 
-  
-      // ★ここで「最後の出発点」を保存
+      const startIsShelterNode = (isShelterArr && isShelterArr[v0] === 1);
+      const startNodeID = (nodeIdArr ? nodeIdArr[v0] : null);
+      const startShelterNm = (startIsShelterNode && startNodeID != null) ? shelterName(startNodeID) : null;
+
       lastPick = { lon, lat, v0, startIsShelterNode, startShelterNm };
-  
-      // ★保存した出発点で実行（この関数は上で追加したやつ）
       await runFromPick(lon, lat, v0, startIsShelterNode, startShelterNm);
-  
+
     } catch(err){
       console.error(err);
-      logStatus("ERROR: " + (err?.message || String(err)));
+      setStateLine("エラー：" + (err?.message || String(err)));
     }
   });
-  
 
   // ---------- Init ----------
   async function init(){
-    setStatusLoading();
     thrLabel.textContent = Number(thrRange.value).toFixed(1);
 
-    logStatus("Loading catalog.json ...");
+    setStateLine("データ読み込み中…（カタログ）");
     catalog = await fetchJSON("./catalog.json");
     let ages = (catalog.ages || [40]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
 
@@ -1441,18 +1396,22 @@ http://127.0.0.1:8000/
     }
     if (ages.includes(40)) ageSelect.value="40";
 
+    // 初期条件ライン
+    setCondLine(Number(ageSelect.value), Number(thrRange.value), (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合");
+
     await loadShelterNames();
     await loadNodesCSV();
     await loadEdgeAttrs();
     await loadEdgesAuto();
-    setStatusReady();
 
-    logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()}. Double-click on the map.`);
+    setStateLine("準備完了：地図をダブルクリックしてください");
+    // 内部情報はUIに出さない（必要ならConsoleへ）
+    console.log("Ready edges=", edgeSegsById.size);
   }
 
   init().catch(err=>{
     console.error(err);
-    logStatus("ERROR: " + (err?.message || String(err)));
+    setStateLine("エラー：" + (err?.message || String(err)));
   });
 
 })();
