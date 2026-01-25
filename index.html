@@ -838,20 +838,32 @@ http://127.0.0.1:8000/
   }
 
   async function getSlice(ageInfo, name, thrIdx){
-    const {dir, shapes, n_nodes, thresholds} = ageInfo;
+    const {dir, shapes, n_nodes} = ageInfo;
     const m = getMeta(shapes, name);
     if (!m.file || !m.dtype) throw new Error(`missing meta: ${name}`);
-    const key = `${dir}/${name}/thr${thrIdx}`;
+  
+    // shape が [N] (1D) の場合は thrIdx を無視（rfall系）
+    const shape = m.shape || m.shapes || m.dims; // 念のため候補
+    const is1D = Array.isArray(shape) && shape.length === 1;
+  
+    const thr = is1D ? 0 : (thrIdx ?? 0);
+  
+    // キャッシュキーも1Dならthr固定にする（無駄なキャッシュ増殖を防ぐ）
+    const key = `${dir}/${name}/thr${thr}`;
     if (sliceCache.has(key)) return sliceCache.get(key);
-
+  
     const bpe = bytesPer(m.dtype);
     const rowBytes = n_nodes * bpe;
-    const offset = thrIdx * rowBytes;
+  
+    const offset = is1D ? 0 : (thr * rowBytes);
+  
     const url = `${dir}/${m.file}`;
     const arr = await fetchArraySlice(url, m.dtype, offset, rowBytes);
+  
     sliceCache.set(key, arr);
     return arr;
   }
+  
 
   // ---------- Route reconstruction (vidSeq + edgeSeq) ----------
   function reconstruct(predVid, predEdgeId, startVid, superVid, maxSteps=500000){
