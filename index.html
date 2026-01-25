@@ -842,20 +842,18 @@ http://127.0.0.1:8000/
     const m = getMeta(shapes, name);
     if (!m.file || !m.dtype) throw new Error(`missing meta: ${name}`);
   
-    // shape が [N] (1D) の場合は thrIdx を無視（rfall系）
-    const shape = m.shape || m.shapes || m.dims; // 念のため候補
-    const is1D = Array.isArray(shape) && shape.length === 1;
+    // ★確実判定：psafe系だけが 2D（thr×n_nodes）。それ以外（rfall等）は 1D（n_nodes）。
+    const is2D = String(name).includes("psafe");
+    const thr = is2D ? (thrIdx ?? 0) : 0;
   
-    const thr = is1D ? 0 : (thrIdx ?? 0);
-  
-    // キャッシュキーも1Dならthr固定にする（無駄なキャッシュ増殖を防ぐ）
+    // キャッシュキーも 1D は thr0 に固定（無駄なキャッシュ増殖防止）
     const key = `${dir}/${name}/thr${thr}`;
     if (sliceCache.has(key)) return sliceCache.get(key);
   
     const bpe = bytesPer(m.dtype);
     const rowBytes = n_nodes * bpe;
   
-    const offset = is1D ? 0 : (thr * rowBytes);
+    const offset = is2D ? (thr * rowBytes) : 0;
   
     const url = `${dir}/${m.file}`;
     const arr = await fetchArraySlice(url, m.dtype, offset, rowBytes);
@@ -863,6 +861,7 @@ http://127.0.0.1:8000/
     sliceCache.set(key, arr);
     return arr;
   }
+  
   
 
   // ---------- Route reconstruction (vidSeq + edgeSeq) ----------
