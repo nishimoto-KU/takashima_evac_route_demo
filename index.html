@@ -262,9 +262,9 @@ A/B/CA/CB：目的地（避難所）
     if (uiStatusMode === "loading") {
       statusEl.textContent = "データ読み込み中…";
     } else if (uiStatusMode === "ready") {
-      statusEl.textContent = "地図をダブルクリックしてください";
+      statusEl.textContent = "準備完了：地図をダブルクリックしてください";
     } else { // "cond"
-      statusEl.textContent = uiCondText || "地図をダブルクリックしてください";
+      statusEl.textContent = uiCondText || "準備完了：地図をダブルクリックしてください";
     }
   }
   
