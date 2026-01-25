@@ -285,6 +285,31 @@ A/B/CA/CB：目的地（避難所）
   // 初期表示
   setStatusLoading();
   
+  // ===== 互換ラッパー（既存コードが setStateLine / setCondLine を呼んでも壊れないようにする）=====
+  // 旧: setStateLine("データ読み込み中…（〜）") など → 新: ロード中/完了を自動判定
+  function setStateLine(s){
+    const t = String(s || "");
+    // 何をロード中かは出さない要求なので、内容は丸めて状態だけにする
+    if (t.includes("読み込み中")) {
+      setStatusLoading();
+      return;
+    }
+    // 旧コードで「準備完了：〜」などを出していた場合
+    if (t.includes("ダブルクリック")) {
+      setStatusReady();
+      return;
+    }
+    // それ以外は「表示条件」扱いにする（必要ならここで文言を調整可能）
+    uiStatusMode = "cond";
+    uiCondText = t;
+    renderStatus();
+  }
+  
+  // 旧: setCondLine(age, thr, modeLabel) → 新: 表示条件（年齢/期待安全度）だけ表示
+  function setCondLine(age, thr, modeLabel){
+    setStatusCond(age, thr);
+  }
+  
 
   if (typeof window.ol === "undefined") {
     setStateLine("エラー：地図ライブラリ（OpenLayers）の読み込みに失敗しました。");
