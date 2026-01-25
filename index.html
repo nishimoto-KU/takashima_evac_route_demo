@@ -86,6 +86,22 @@ http://localhost:8000/
       font-size:12px;
     }
     .popup-close:hover { background:#f3f4f6; }
+	
+	/* 経路の基準：box無しで“付随”っぽく */
+    .details-compact {
+      margin-top: 6px;
+    }
+    .details-compact > summary {
+      cursor: pointer;
+      list-style: none;
+      font-weight: 600;
+    }
+    .details-compact[open] {
+      margin-bottom: 6px;
+    }
+    .details-compact .row label {
+      white-space: nowrap;   /* 1行表示 */
+    }
   </style>
 </head>
 
@@ -168,22 +184,20 @@ A/B/CA/CB：目的地（避難所）
 
     <!-- 5) オプション -->
     <h2>経路の基準</h2>
-    <div class="box">
-      <details id="optDetails">
-        <summary>オプション（クリックして開く）</summary>
+    <details id="optDetails" class="details-compact">
+	  <summary>オプション</summary>
 
-        <div class="row" style="margin-top:8px;">
-          <label><input type="checkbox" id="optComposite" checked> 複合リスク回避（浸水＋転落）</label>
-        </div>
-        <div class="row" style="margin-top:4px;">
-          <label><input type="checkbox" id="optRfallOnly"> 転落リスク回避（転落のみ）</label>
-        </div>
+      <div class="row" style="margin-top:8px;">
+          <label><input type="checkbox" id="optComposite" checked> 複合リスク回避経路</label>
+      </div>
+      <div class="row" style="margin-top:4px;">
+          <label><input type="checkbox" id="optRfallOnly"> 転落リスク回避経路</label>
+      </div>
 
-        <div class="muted" style="margin-top:8px; line-height:1.5;">
+      <div class="muted" style="margin-top:8px; line-height:1.5;">
 「転落リスク回避」を選ぶと、浸水は考慮せず、転落リスクがある道路を避ける経路を優先して表示します。
-        </div>
-      </details>
-    </div>
+      </div>
+    </details>
 
     <!-- 6) 経路の情報（旧：結果） -->
     <h2>経路の案内</h2>
