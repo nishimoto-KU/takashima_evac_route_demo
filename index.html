@@ -498,6 +498,8 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       zoom: 11
     })
   });
+  
+  addCoverageLayer(map);
 
   // disable DoubleClickZoom
   (function disableDoubleClickZoom(){
@@ -537,6 +539,33 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error(`fetch failed: ${url} (${r.status})`);
     return await r.json();
+  }
+  
+  // ---- Coverage (data-absent) polygon layer ----
+  function addCoverageLayer(map){
+    const src = new ol.source.Vector({
+      url: "./coverage_diff.geojson",
+      format: new ol.format.GeoJSON(),
+    });
+  
+    const layer = new ol.layer.Vector({
+      source: src,
+      style: new ol.style.Style({
+        fill: new ol.style.Fill({ color: "rgba(120,120,120,0.25)" }),
+        stroke: new ol.style.Stroke({ color: "rgba(80,80,80,0.9)", width: 2 }),
+      }),
+    });
+  
+    // 背面に置く（道路より下、ベース地図より上）
+    layer.setZIndex(1);
+  
+    // 読み込み失敗が分かるように（任意）
+    src.on("error", () => {
+      console.warn("coverage_diff.geojson failed to load");
+    });
+  
+    map.addLayer(layer);
+    return layer;
   }
 
   function shelterName(nodeID){
