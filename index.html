@@ -254,24 +254,37 @@ A/B/CA/CB：目的地（避難所）
   const popupContentEl = document.getElementById("popup-content");
   const popupCloseBtn = document.getElementById("popup-close");
 
-  // --- 状態表示（ユーザー向けに整理） ---
-  let uiStateLine = "データ読み込み中…";
-  let uiCondLine  = "表示条件：未選択";
-
+  // --- 状態表示（クリック前は「表示条件」を出さない） ---
+  let uiStatusMode = "loading"; // "loading" | "ready" | "cond"
+  let uiCondText   = "";        // mode==="cond" のときだけ表示
+  
   function renderStatus(){
-    statusEl.textContent = `${uiStateLine}\n${uiCondLine}`;
+    if (uiStatusMode === "loading") {
+      statusEl.textContent = "データ読み込み中…";
+    } else if (uiStatusMode === "ready") {
+      statusEl.textContent = "地図をダブルクリックしてください";
+    } else { // "cond"
+      statusEl.textContent = uiCondText || "地図をダブルクリックしてください";
+    }
   }
-  function setStateLine(s){
-    uiStateLine = s;
+  
+  function setStatusLoading(){
+    uiStatusMode = "loading";
     renderStatus();
   }
-  function setCondLine(age, thr, modeLabel){
-    uiCondLine = `表示条件：年齢 ${age}歳 / 期待安全度 ${Number(thr).toFixed(1)} / 基準：${modeLabel}`;
+  function setStatusReady(){
+    uiStatusMode = "ready";
     renderStatus();
   }
-
+  function setStatusCond(age, thr){
+    uiStatusMode = "cond";
+    uiCondText = `表示条件：年齢 ${age}歳 / 期待安全度 ${Number(thr).toFixed(1)}`;
+    renderStatus();
+  }
+  
   // 初期表示
-  renderStatus();
+  setStatusLoading();
+  
 
   if (typeof window.ol === "undefined") {
     setStateLine("エラー：地図ライブラリ（OpenLayers）の読み込みに失敗しました。");
@@ -531,7 +544,7 @@ A/B/CA/CB：目的地（避難所）
 
   // ---------- Load nodes ----------
   async function loadNodesCSV(){
-    setStateLine("データ読み込み中…（道路結節点）");
+    setStateLine("データ読み込み中…");
     const txt = await fetchText("./nodes_wgs84.csv");
     const lines = txt.split("\n");
     const header = lines[0].trim().split(",");
@@ -579,7 +592,7 @@ A/B/CA/CB：目的地（避難所）
 
   // ---------- Load edge attrs ----------
   async function loadEdgeAttrs(){
-    setStateLine("データ読み込み中…（道路属性）");
+    setStateLine("データ読み込み中…");
     const txt = await fetchText("./edge_attrs_by_edgeid.csv");
     const lines = txt.split("\n");
     const header = lines[0].trim().split(",");
@@ -620,7 +633,7 @@ A/B/CA/CB：目的地（避難所）
   }
 
   async function loadShelterNames(){
-    setStateLine("データ読み込み中…（避難所名）");
+    setStateLine("データ読み込み中…");
     shelterNameByNodeID = await fetchJSON("./shelter_name_by_nodeID.json");
   }
 
@@ -640,7 +653,7 @@ A/B/CA/CB：目的地（避難所）
   }
 
   async function loadEdgesFGB(){
-    setStateLine("データ読み込み中…（道路形状）");
+    setStateLine("データ読み込み中…");
     const fg = globalThis.flatgeobuf;
     if (!fg) throw new Error("flatgeobuf not loaded");
 
@@ -1063,7 +1076,7 @@ A/B/CA/CB：目的地（避難所）
     hidePopup();
     lastPick = null;
     resultEl.textContent = "クリアしました。地図をダブルクリックしてください。";
-    setStateLine("準備完了：地図をダブルクリックしてください");
+    setStateLine();
   }
   clearBtn.addEventListener("click", clearAll);
 
@@ -1132,7 +1145,7 @@ A/B/CA/CB：目的地（避難所）
 
       // 状態表示（現在条件）
       const modeLabel = (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合";
-      setCondLine(age, thr, modeLabel);
+      setCondLine(age, thr);
 
       routeSource.clear(); riskSource.clear(); pointSource.clear(); highlightSource.clear();
 
@@ -1383,7 +1396,7 @@ A/B/CA/CB：目的地（避難所）
   async function init(){
     thrLabel.textContent = Number(thrRange.value).toFixed(1);
 
-    setStateLine("データ読み込み中…（カタログ）");
+    setStatusLoading();
     catalog = await fetchJSON("./catalog.json");
     let ages = (catalog.ages || [40]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
 
@@ -1404,7 +1417,7 @@ A/B/CA/CB：目的地（避難所）
     await loadEdgeAttrs();
     await loadEdgesAuto();
 
-    setStateLine("準備完了：地図をダブルクリックしてください");
+    setStatusReady();
     // 内部情報はUIに出さない（必要ならConsoleへ）
     console.log("Ready edges=", edgeSegsById.size);
   }
