@@ -743,10 +743,11 @@ http://127.0.0.1:8000/
     const t0 = performance.now();
     logStatus("Loading edges_min.fgb ...");
   
-    const fg = globalThis.flatgeobuf;
-    if (!fg || typeof fg.deserialize !== "function") {
-      throw new Error("flatgeobuf.deserialize is not available");
-    }
+    const ok = await ensureFlatGeobuf();
+        const fg = globalThis.flatgeobuf;
+        if (!ok || !fg || typeof fg.deserialize !== "function") {
+          throw new Error("flatgeobuf.deserialize is not available");
+        }
   
     // ogrinfo の Extent（全範囲bbox）
     const bboxAll = {
