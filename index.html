@@ -11,7 +11,7 @@ http://127.0.0.1:8000/
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>避難経路マップ（高島市周辺）</title>
+  <title>避難経路マップ（高島市周辺）TTI</title>
   <link rel="icon" href="data:,">
 
   <!-- OpenLayers -->
@@ -20,6 +20,8 @@ http://127.0.0.1:8000/
 
   <!-- FlatGeobuf (local) -->
   <script src="./flatgeobuf-geojson.min.js"></script>
+  <!-- fallback (older build) -->
+  <script src="./flatgeobuf.min.js"></script>
 
   <style>
     html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif; }
@@ -90,7 +92,7 @@ http://127.0.0.1:8000/
 <body>
 <div id="app">
   <div id="panel">
-    <h1>避難経路マップ（高島市周辺）</h1>
+    <h1>避難経路マップ（高島市周辺）TTI</h1>
 
     <div class="box" id="introBox">
       <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
@@ -274,7 +276,14 @@ http://127.0.0.1:8000/
 
   // edge geometry: edgeID -> [part coords...]
   const edgeSegsById = new Map();
-  // edge attrs: edgeID -> obj
+  const edgePartIndex = new Map(); // edgeID -> Map("ax,ay|bx,by" -> {coords, rev})
+  const routeResultCache = new Map(); // key -> {ok, dist, root, edgeSeq, vidSeq}
+  const routeGeomCache = new Map();   // key -> {lineCoords, stepParts}
+  const ROUTE_CACHE_MAX = 200;
+
+  function q6(x){ return Math.round(x * 1e6); }
+  function epKey(a,b){ return `${q6(a[0])},${q6(a[1])}|${q6(b[0])},${q6(b[1])}`; }
+// edge attrs: edgeID -> obj
   const edgeAttrById = new Map();
   // shelter names
   let shelterNameByNodeID = {};
@@ -283,48 +292,8 @@ http://127.0.0.1:8000/
   const ageCache = new Map();
   const sliceCache = new Map();
 
-  // ---------- Performance caches ----------
-  // Cache full binary files (ArrayBuffer) to avoid repeated Range fetch on each click.
-  const fileBufferCache = new Map(); // url -> ArrayBuffer
-
-  // Cache computed routes to avoid repeated reconstruction for the same start node & settings.
-  // key: `${age}|${mode}|${thrIdx}|${startVid}` -> {edgeSeq, vidSeq, lines4326, stepParts}
-  const routeCache = new Map();
-  const routeSeqCache = new Map();
-  const ROUTE_SEQ_CACHE_MAX = 2000;
-
-  const ROUTE_CACHE_MAX = 300; // simple cap; oldest entries are removed
-
-  // Fast lookup for edge parts by endpoints
-  // edgePartIndex.get(edgeID) -> Map(key -> {coords, rev})
-  const edgePartIndex = new Map();
-
-
-  function routeKey(age, mode, thrIdx, startVid){
-    return `${age}|${mode}|${thrIdx}|${startVid}`;
-  }
-
-  function cacheRouteSeqSet(key, val){
-    routeSeqCache.set(key, val);
-    if (routeSeqCache.size > ROUTE_SEQ_CACHE_MAX){
-      const firstKey = routeSeqCache.keys().next().value;
-      routeSeqCache.delete(firstKey);
-    }
-  }
-
-  function cacheRouteSet(key, val){
-    routeCache.set(key, val);
-    if (routeCache.size > ROUTE_CACHE_MAX){
-      const firstKey = routeCache.keys().next().value;
-      routeCache.delete(firstKey);
-    }
-  }
-
-
   // ---------- Layers ----------
   const routeSource = new ol.source.Vector();
-  const routeFeatureByType = new Map();
-
   const routeLayer = new ol.layer.Vector({
     source: routeSource,
     style: (feature) => {
@@ -453,22 +422,6 @@ http://127.0.0.1:8000/
   }
   addCoverageLayer();
 
-  // 
-  async function ensureFlatGeobuf() {
-    if (window.flatgeobuf?.geojson?.deserialize) return;
-  
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "./flatgeobuf-geojson.min.js";   // ←このファイルをweb_demoに置く
-      s.onload = resolve;
-      s.onerror = () => reject(new Error("failed to load flatgeobuf-geojson.min.js"));
-      document.head.appendChild(s);
-    });
-  
-    if (!window.flatgeobuf?.geojson?.deserialize) {
-      throw new Error("flatgeobuf library not available (after loading script)");
-    }
-  }
   
 
   // disable DoubleClickZoom (so dblclick used for start selection only)
@@ -589,31 +542,6 @@ http://127.0.0.1:8000/
     return best;
   }
 
-
-  async function ensureFlatGeobuf() {
-    if (globalThis.flatgeobuf?.geojson?.deserialize) return;
-  
-    // キャッシュ回避（確実に新しい内容を読む）
-    const url = "./flatgeobuf-geojson.min.js?v=" + Date.now();
-  
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = url;
-      s.onload = resolve;
-      s.onerror = () => reject(new Error("failed to load " + url));
-      document.head.appendChild(s);
-    });
-  
-    // ここでまだ無ければ、JSは実行されたがグローバルが生えない/中で落ちてる
-    if (!globalThis.flatgeobuf?.geojson?.deserialize) {
-      console.error("flatgeobuf loaded but not available. globalThis.flatgeobuf =", globalThis.flatgeobuf);
-      console.error("script tags:", [...document.scripts].map(s => s.src).filter(Boolean));
-      throw new Error("flatgeobuf library not available (after loading)");
-    }
-  }
-  
-
-
   // ---------- Load nodes ----------
   async function loadNodesCSV(){
     logStatus("Loading nodes_wgs84.csv ...");
@@ -717,6 +645,14 @@ http://127.0.0.1:8000/
     let arr = edgeSegsById.get(edgeID);
     if (!arr){ arr=[]; edgeSegsById.set(edgeID, arr); }
     arr.push(coords);
+
+    // Build quick endpoint->part index to avoid scanning on every route draw
+    const a = coords[0];
+    const b = coords[coords.length-1];
+    let mp = edgePartIndex.get(edgeID);
+    if (!mp){ mp = new Map(); edgePartIndex.set(edgeID, mp); }
+    mp.set(epKey(a,b), {coords, rev:false});
+    mp.set(epKey(b,a), {coords, rev:true});
   }
 
   async function loadEdgesGeoJSON(){
@@ -743,67 +679,91 @@ http://127.0.0.1:8000/
     const t0 = performance.now();
     logStatus("Loading edges_min.fgb ...");
   
-    const ok = await ensureFlatGeobuf();
-        const fg = globalThis.flatgeobuf;
-        if (!ok || !fg || typeof fg.deserialize !== "function") {
-          throw new Error("flatgeobuf.deserialize is not available");
-        }
+    const fg = globalThis.flatgeobuf;
+    if (!fg) throw new Error("flatgeobuf not loaded");
   
-    // ogrinfo の Extent（全範囲bbox）
-    const bboxAll = {
-      minX: 135.764476,
-      minY: 35.174088,
-      maxX: 136.179544,
-      maxY: 35.582073,
-    };
+    // 全範囲bbox（ogrinfoのExtent）
+    const bboxAll = { minX: 135.764476, minY: 35.174088, maxX: 136.179544, maxY: 35.582073 };
   
     edgeSegsById.clear();
   
     let feats = 0;
-    for await (const f of fg.deserialize("./edges_min.fgb", bboxAll)) {
-      feats++;
-      if (feats === 1) console.log("First FGB feature:", f);
   
-      const props = f.properties || {};
-      // ★重要：edgeID は String の可能性が高いので Number化で落とさない
-      const edgeID = props.edgeID ?? props.edgeId ?? props.id;
-      if (edgeID == null) continue;
+    // --- パターンA: flatgeobuf.geojson.deserialize(ArrayBuffer) (v4系の一部)
+    if (fg.geojson?.deserialize) {
+      const resp = await fetch("./edges_min.fgb");
+      if (!resp.ok) throw new Error(`fetch failed: edges_min.fgb (${resp.status})`);
+      const buf = await resp.arrayBuffer();
   
-      const g = f.geometry;
-      if (!g) continue;
+      for await (const f of fg.geojson.deserialize(buf)) {
+        feats++;
+        if (feats === 1) console.log("First FGB feature:", f);
   
-      if (g.type === "LineString") {
-        pushEdgeSegment(String(edgeID), g.coordinates);
-      } else if (g.type === "MultiLineString") {
-        for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
-      }
+        const props = f.properties || {};
+        const edgeID = props.edgeID ?? props.edgeId ?? props.id;
+        if (edgeID == null) continue;
   
-      if (feats % 50000 === 0) {
-        logStatus(`Loading edges_min.fgb ... feats=${feats.toLocaleString()} edges=${edgeSegsById.size.toLocaleString()}`);
-        await sleep(0);
+        const g = f.geometry;
+        if (!g) continue;
+  
+        if (g.type === "LineString") pushEdgeSegment(String(edgeID), g.coordinates);
+        else if (g.type === "MultiLineString") for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
+  
+        if (feats % 50000 === 0) {
+          logStatus(`Loading edges_min.fgb ... feats=${feats.toLocaleString()} edges=${edgeSegsById.size.toLocaleString()}`);
+          await sleep(0);
+        }
       }
     }
+    // --- パターンB: flatgeobuf.deserialize(url, bbox) (v3系でよくある)
+    else if (typeof fg.deserialize === "function") {
+      const iter = fg.deserialize("./edges_min.fgb", bboxAll);
   
-    
-    // Build fast endpoint->part index (speeds up per-click route drawing)
-    buildEdgePartIndex();
-
+      // ここが “async iterable” であることを前提にする
+      if (!iter || typeof iter[Symbol.asyncIterator] !== "function") {
+        // ここに落ちるのが今のエラー（iterがasync iterableじゃない）
+        throw new Error("flatgeobuf.deserialize did not return an async iterable (API mismatch). Use flatgeobuf-geojson build or adjust loader.");
+      }
+  
+      for await (const f of iter) {
+        feats++;
+        if (feats === 1) console.log("First FGB feature:", f);
+  
+        const props = f.properties || {};
+        const edgeID = props.edgeID ?? props.edgeId ?? props.id;
+        if (edgeID == null) continue;
+  
+        const g = f.geometry;
+        if (!g) continue;
+  
+        if (g.type === "LineString") pushEdgeSegment(String(edgeID), g.coordinates);
+        else if (g.type === "MultiLineString") for (const part of g.coordinates) pushEdgeSegment(String(edgeID), part);
+  
+        if (feats % 50000 === 0) {
+          logStatus(`Loading edges_min.fgb ... feats=${feats.toLocaleString()} edges=${edgeSegsById.size.toLocaleString()}`);
+          await sleep(0);
+        }
+      }
+    } else {
+      throw new Error("No supported flatgeobuf API found");
+    }
+  
     const dt = (performance.now() - t0) / 1000;
     logStatus(`Ready. edges=${edgeSegsById.size.toLocaleString()} (feats=${feats.toLocaleString()}, ${dt.toFixed(1)}s). Double-click on the map.`);
   }
   
-
+  
   async function loadEdgesAuto(){
     try {
       await loadEdgesFGB();
     } catch(e){
-      console.error("FGB failed:", e);
+      console.error("FGB load failed:", e);
       edgeSegsById.clear();
-      logStatus("ERROR: FGB failed: " + (e?.message || e));
+      logStatus("ERROR: FGB load failed: " + (e?.message || e));
+      // ★ここで GeoJSON を呼ばない（404を出さない）
     }
   }
   
-
 
   // ---------- shapes.json + slice loader ----------
   function bytesPer(dtype){
@@ -816,23 +776,16 @@ http://127.0.0.1:8000/
     if (dtype==="int32") return new Int32Array(buffer);
     throw new Error("unsupported dtype: "+dtype);
   }
-  
   async function fetchArraySlice(url, dtype, offsetBytes, lengthBytes){
-    // Strategy:
-    // 1) Fetch the whole file once and cache it (fast for repeated clicks).
-    // 2) Then slice in-memory and return a typed array view.
-    // This avoids repeated Range requests that were the main bottleneck.
-    if (!fileBufferCache.has(url)){
-      const r = await fetch(url, { cache: "force-cache" });
-      if (!r.ok) throw new Error(`fetch failed: ${url} (${r.status})`);
+    const headers = { "Range": `bytes=${offsetBytes}-${offsetBytes + lengthBytes - 1}` };
+    let r = await fetch(url, { headers, cache:"force-cache" });
+    if (r.status === 206){
       const ab = await r.arrayBuffer();
-      fileBufferCache.set(url, ab);
+      return makeTyped(dtype, ab);
     }
-    const abAll = fileBufferCache.get(url);
-    const ab = abAll.slice(offsetBytes, offsetBytes + lengthBytes);
-    return makeTyped(dtype, ab);
+    const abAll = await r.arrayBuffer();
+    return makeTyped(dtype, abAll.slice(offsetBytes, offsetBytes+lengthBytes));
   }
-
 
   function getMeta(shapes, name){
     const dtypes = shapes.dtypes || {};
@@ -885,51 +838,20 @@ http://127.0.0.1:8000/
   }
 
   async function getSlice(ageInfo, name, thrIdx){
-    const {dir, shapes, n_nodes} = ageInfo;
+    const {dir, shapes, n_nodes, thresholds} = ageInfo;
     const m = getMeta(shapes, name);
     if (!m.file || !m.dtype) throw new Error(`missing meta: ${name}`);
-  
+    const key = `${dir}/${name}/thr${thrIdx}`;
+    if (sliceCache.has(key)) return sliceCache.get(key);
+
     const bpe = bytesPer(m.dtype);
     const rowBytes = n_nodes * bpe;
-  
-    const shp = Array.isArray(m.shape) ? m.shape : [];
-    let offset = 0;
-    let length = rowBytes;
-  
-    // 形状チェック＆offset計算
-    if (shp.length === 2){
-      const [n_thr, n_col] = shp;
-      if (n_col !== n_nodes){
-        console.warn(`[getSlice] shape mismatch: ${name} shape=${shp} n_nodes=${n_nodes}`);
-      }
-      if (thrIdx < 0 || thrIdx >= n_thr){
-        throw new Error(`[getSlice] thrIdx out of range for ${name}: thrIdx=${thrIdx} n_thr=${n_thr}`);
-      }
-      offset = thrIdx * rowBytes;
-    } else if (shp.length === 1){
-      const [n_col] = shp;
-      if (n_col !== n_nodes){
-        console.warn(`[getSlice] shape mismatch(1D): ${name} shape=${shp} n_nodes=${n_nodes}`);
-      }
-      // 1次元はthrIdxを無視して先頭から読む
-      offset = 0;
-    } else {
-      console.warn(`[getSlice] unknown shape for ${name}:`, shp);
-      offset = 0;
-    }
-  
-    const key = (shp.length === 2)
-      ? `${dir}/${name}/thr${thrIdx}`
-      : `${dir}/${name}/1d`;
-  
-    if (sliceCache.has(key)) return sliceCache.get(key);
-  
+    const offset = thrIdx * rowBytes;
     const url = `${dir}/${m.file}`;
-    const arr = await fetchArraySlice(url, m.dtype, offset, length);
+    const arr = await fetchArraySlice(url, m.dtype, offset, rowBytes);
     sliceCache.set(key, arr);
     return arr;
   }
-  
 
   // ---------- Route reconstruction (vidSeq + edgeSeq) ----------
   function reconstruct(predVid, predEdgeId, startVid, superVid, maxSteps=500000){
@@ -948,49 +870,24 @@ http://127.0.0.1:8000/
     return {vidSeq, edgeSeq};
   }
 
-
-  function qKey(pt){
-    // quantize coordinates to reduce floating mismatch; 1e-6 deg ~ 0.11 m
-    const x = Math.round(pt[0] * 1e6);
-    const y = Math.round(pt[1] * 1e6);
-    return `${x},${y}`;
-  }
-
-  function buildEdgePartIndex(){
-    edgePartIndex.clear();
-    for (const [eid, parts] of edgeSegsById.entries()){
-      const m = new Map();
-      for (const part of parts){
-        if (!part || part.length < 2) continue;
-        const a = part[0], b = part[part.length-1];
-        const ka = qKey(a), kb = qKey(b);
-        // store both orientations
-        m.set(ka + "|" + kb, { coords: part, rev: false });
-        m.set(kb + "|" + ka, { coords: part, rev: true });
-      }
-      edgePartIndex.set(eid, m);
-    }
-  }
-
   // ---------- Geometry choose: use only the part actually used by the route ----------
-  
   function pickPartByEndpoints(edgeID, curPt, nextPt){
     const parts = edgeSegsById.get(edgeID);
     if (!parts || parts.length===0) return null;
 
-    // Fast path: endpoint index lookup
-    const idx = edgePartIndex.get(edgeID);
-    if (idx){
-      const hit = idx.get(qKey(curPt) + "|" + qKey(nextPt));
-      if (hit){
-        const coords = hit.rev ? hit.coords.slice().reverse() : hit.coords.slice();
-        coords[0] = curPt;
-        coords[coords.length-1] = nextPt;
-        return coords;
+    // Fast path: endpoint-index lookup (O(1))
+    const mp = edgePartIndex.get(edgeID);
+    if (mp){
+      const ent = mp.get(epKey(curPt, nextPt));
+      if (ent && ent.coords){
+        const base = ent.rev ? ent.coords.slice().reverse() : ent.coords.slice();
+        base[0] = curPt;
+        base[base.length-1] = nextPt;
+        return base;
       }
     }
 
-    // Fallback: scan (robust against slight endpoint mismatch)
+    // Fallback: scan parts and choose best match
     let best=null, bestScore=Infinity, rev=false;
     for (const part of parts){
       if (!part || part.length<2) continue;
@@ -1006,7 +903,6 @@ http://127.0.0.1:8000/
     coords[coords.length-1]=nextPt;
     return coords;
   }
-
 
   // Build route geometry + per-step chosen coords (for risk overlay)
   function buildRoute(edgeSeq, vidSeq){
@@ -1060,42 +956,15 @@ http://127.0.0.1:8000/
     pointSource.addFeature(f);
   }
 
-  
-  
-  function addRoute(routeType, edgeSeq, vidSeq, cacheKey=null){
-    // Route-level cache (geometry+stepParts) to avoid rebuilding for repeated clicks.
-    if (cacheKey && routeCache.has(cacheKey)){
-      const cached = routeCache.get(cacheKey);
-      let f = routeFeatureByType.get(routeType);
-      if (!f){
-        f = new ol.Feature();
-        routeFeatureByType.set(routeType, f);
-        routeSource.addFeature(f);
-      }
-      f.set("routeType", routeType);
-      f.setGeometry(cached.geom);
-      return {ok:true, stepParts: cached.stepParts};
-    }
-
+  function addRoute(routeType, edgeSeq, vidSeq){
     const r = buildRoute(edgeSeq, vidSeq);
     if (!r.geom) return {ok:false, stepParts: r.stepParts};
 
-    let f = routeFeatureByType.get(routeType);
-    if (!f){
-      f = new ol.Feature();
-      routeFeatureByType.set(routeType, f);
-      routeSource.addFeature(f);
-    }
+    const f = new ol.Feature({ geometry: r.geom });
     f.set("routeType", routeType);
-    f.setGeometry(r.geom);
-
-    if (cacheKey){
-      cacheRouteSet(cacheKey, { geom: r.geom, stepParts: r.stepParts });
-    }
+    routeSource.addFeature(f);
     return {ok:true, stepParts: r.stepParts};
   }
-
-
 
   function addDestMarker(rootNodeID, label){
     const vid = nodeID2Vid.get(rootNodeID|0);
@@ -1255,7 +1124,6 @@ http://127.0.0.1:8000/
   // ---------- UI ----------
   function clearAll(){
     routeSource.clear();
-    routeFeatureByType.clear();
     riskSource.clear();
     pointSource.clear();
     highlightSource.clear();
@@ -1362,6 +1230,10 @@ http://127.0.0.1:8000/
       const thrActual = ageInfo.thresholds[thrIdx];
   
       async function runOne(modeName, thrIdxUse){
+	    const key = `${age}|${modeName}|${thrIdxUse}|${v0}`;
+        const cacheKey = `${age}|${modeName}|${thrIdxUse}|${v0}`;
+        if (routeResultCache.has(cacheKey)) return routeResultCache.get(cacheKey);
+
         const dict = {
           "global_psafe": ["dist_global_psafe","root_global_psafe","pred_vid_global_psafe","pred_edgeid_global_psafe"],
           "muni_psafe":   ["dist_muni_psafe","root_muni_psafe","pred_vid_muni_psafe","pred_edgeid_muni_psafe"],
@@ -1371,10 +1243,12 @@ http://127.0.0.1:8000/
   
         const [dN,rN,pvN,peN] = dict;
   
-        const distArr = await getSlice(ageInfo, dN, thrIdxUse);
-        const rootArr = await getSlice(ageInfo, rN, thrIdxUse);
-        const predV   = await getSlice(ageInfo, pvN, thrIdxUse);
-        const predE   = await getSlice(ageInfo, peN, thrIdxUse);
+        const [distArr, rootArr, predV, predE] = await Promise.all([
+          getSlice(ageInfo, dN, thrIdxUse),
+          getSlice(ageInfo, rN, thrIdxUse),
+          getSlice(ageInfo, pvN, thrIdxUse),
+          getSlice(ageInfo, peN, thrIdxUse),
+        ]);
   
         if (myToken !== runToken) return {ok:false, dist:Infinity, root:-1, edgeSeq:null, vidSeq:null};
   
@@ -1385,9 +1259,13 @@ http://127.0.0.1:8000/
         }
         const {vidSeq, edgeSeq} = reconstruct(predV, predE, v0, ageInfo.superVid);
         const out = {ok:true, dist:Number(dist), root:Number(root), edgeSeq, vidSeq};
-        const key = routeKey(age, modeName, thrIdxUse, v0);
-        cacheRouteSeqSet(key, out);
-        return { ...out, cacheKey: key };
+        routeResultCache.set(cacheKey, out);
+        // keep cache bounded
+        if (routeResultCache.size > ROUTE_CACHE_MAX){
+          const firstKey = routeResultCache.keys().next().value;
+          routeResultCache.delete(firstKey);
+        }
+        return out;
       }
   
       const lines = [];
@@ -1412,20 +1290,20 @@ http://127.0.0.1:8000/
 	  if (outCA.ok || outCB.ok){
 	 	 if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
 	 	 lines.push("CA と CB は同一経路 → CA のみ表示");
-	 	 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq, outCA.cacheKey);
+	 	 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
 	 	 addDestMarker(outCA.root, "CA");
 	 	 addRiskFromStepParts(r.stepParts, false, isOld); // CA/CB は実線（dashed=false）
 	 	 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
 	 	 } else {
 	 	 if (outCA.ok){
-	 		 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq, outCA.cacheKey);
+	 		 const r = addRoute("CA", outCA.edgeSeq, outCA.vidSeq);
 	 		 addDestMarker(outCA.root, "CA");
 	 		 addRiskFromStepParts(r.stepParts, false, isOld);
 	 		 lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
 	 	 } else lines.push("CA（同自治体）: 到達不能");
 	  
 	 	 if (outCB.ok){
-	 		 const r = addRoute("CB", outCB.edgeSeq, outCB.vidSeq, outCB.cacheKey);
+	 		 const r = addRoute("CB", outCB.edgeSeq, outCB.vidSeq);
 	 		 addDestMarker(outCB.root, "CB");
 	 		 addRiskFromStepParts(r.stepParts, false, isOld);
 	 		 lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
@@ -1445,7 +1323,7 @@ http://127.0.0.1:8000/
 	  const outB0 = await runOne("global_psafe", thrIdx0);
 	  
 	  const showA0B0 = (routeType, out, destLabel) => {
-	 	 const r = addRoute(routeType, out.edgeSeq, out.vidSeq, out.cacheKey);
+	 	 const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
 	 	 addDestMarker(out.root, destLabel);
 	 	 addRiskFromStepParts(r.stepParts, true, isOld); // A0/B0 は破線（dashed=true）
 	  };
@@ -1484,7 +1362,7 @@ http://127.0.0.1:8000/
       if (myToken !== runToken) return;
   
       const showRoute = (routeType, out, destLabel) => {
-        const r = addRoute(routeType, out.edgeSeq, out.vidSeq, out.cacheKey);
+        const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
         addDestMarker(out.root, destLabel);
   
         // dashed for A/B/A0/B0, solid for CA/CB
@@ -1650,10 +1528,3 @@ http://127.0.0.1:8000/
 </script>
 </body>
 </html>
-
-
-        const key = routeKey(age, modeName, thrIdxUse, v0);
-        const cachedSeq = routeSeqCache.get(key);
-        if (cachedSeq){
-          return { ...cachedSeq, cacheKey: key };
-        }
