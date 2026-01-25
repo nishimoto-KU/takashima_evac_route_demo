@@ -1,0 +1,10 @@
+{
+  "file": "edge_length_m_f32.bin",
+  "dtype": "float32",
+  "shape": [
+    35029
+  ],
+  "units": "m",
+  "source": "edges_min.fgb",
+  "note": "Row order matches edge_attrs_by_edgeid.csv"
+}
