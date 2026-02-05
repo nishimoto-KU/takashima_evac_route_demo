@@ -1,0 +1,105 @@
+{
+  "age": 21,
+  "n_nodes": 164597,
+  "n_thr": 11,
+  "dtypes": {
+    "thresholds": "float32",
+    "dist_global_psafe": "float32",
+    "root_global_psafe": "int32",
+    "pred_vid_global_psafe": "int32",
+    "pred_edgeid_global_psafe": "int32",
+    "dist_muni_psafe": "float32",
+    "root_muni_psafe": "int32",
+    "pred_vid_muni_psafe": "int32",
+    "pred_edgeid_muni_psafe": "int32",
+    "dist_global_rfall": "float32",
+    "root_global_rfall": "int32",
+    "pred_vid_global_rfall": "int32",
+    "pred_edgeid_global_rfall": "int32",
+    "dist_muni_rfall": "float32",
+    "root_muni_rfall": "int32",
+    "pred_vid_muni_rfall": "int32",
+    "pred_edgeid_muni_rfall": "int32"
+  },
+  "shapes": {
+    "thresholds": [
+      11
+    ],
+    "dist_global_psafe": [
+      11,
+      164597
+    ],
+    "root_global_psafe": [
+      11,
+      164597
+    ],
+    "pred_vid_global_psafe": [
+      11,
+      164597
+    ],
+    "pred_edgeid_global_psafe": [
+      11,
+      164597
+    ],
+    "dist_muni_psafe": [
+      11,
+      164597
+    ],
+    "root_muni_psafe": [
+      11,
+      164597
+    ],
+    "pred_vid_muni_psafe": [
+      11,
+      164597
+    ],
+    "pred_edgeid_muni_psafe": [
+      11,
+      164597
+    ],
+    "dist_global_rfall": [
+      164597
+    ],
+    "root_global_rfall": [
+      164597
+    ],
+    "pred_vid_global_rfall": [
+      164597
+    ],
+    "pred_edgeid_global_rfall": [
+      164597
+    ],
+    "dist_muni_rfall": [
+      164597
+    ],
+    "root_muni_rfall": [
+      164597
+    ],
+    "pred_vid_muni_rfall": [
+      164597
+    ],
+    "pred_edgeid_muni_rfall": [
+      164597
+    ]
+  },
+  "files": {
+    "thresholds": "thresholds_f32.bin",
+    "dist_global_psafe": "dist_global_psafe_f32.bin",
+    "root_global_psafe": "root_global_psafe_i32.bin",
+    "pred_vid_global_psafe": "pred_vid_global_psafe_i32.bin",
+    "pred_edgeid_global_psafe": "pred_edgeid_global_psafe_i32.bin",
+    "dist_muni_psafe": "dist_muni_psafe_f32.bin",
+    "root_muni_psafe": "root_muni_psafe_i32.bin",
+    "pred_vid_muni_psafe": "pred_vid_muni_psafe_i32.bin",
+    "pred_edgeid_muni_psafe": "pred_edgeid_muni_psafe_i32.bin",
+    "dist_global_rfall": "dist_global_rfall_f32.bin",
+    "root_global_rfall": "root_global_rfall_i32.bin",
+    "pred_vid_global_rfall": "pred_vid_global_rfall_i32.bin",
+    "pred_edgeid_global_rfall": "pred_edgeid_global_rfall_i32.bin",
+    "dist_muni_rfall": "dist_muni_rfall_f32.bin",
+    "root_muni_rfall": "root_muni_rfall_i32.bin",
+    "pred_vid_muni_rfall": "pred_vid_muni_rfall_i32.bin",
+    "pred_edgeid_muni_rfall": "pred_edgeid_muni_rfall_i32.bin"
+  },
+  "notes": "All arrays are little-endian raw binaries. Use TypedArray over ArrayBuffer."
+}
