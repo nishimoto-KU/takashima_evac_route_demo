@@ -336,9 +336,17 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
   }
   function setStatusCond(age, thr){
     uiStatusMode = "cond";
-    uiCondText = `表示条件：年齢 ${age}歳 / 期待安全度 ${Number(thr).toFixed(1)}`;
+  
+    // 追加：UI上の表示ラベル（例: "6～10", "26～55" など）
+    const ageLabel =
+  	ageSelect?.selectedOptions?.[0]?.textContent
+  	?? ageSelect?.options?.[ageSelect.selectedIndex]?.textContent
+  	?? `${age}歳`;
+  
+    uiCondText = `表示条件：年齢 ${ageLabel} / 期待安全度 ${Number(thr).toFixed(1)}`;
     renderStatus();
   }
+  
   
   // 初期表示
   setStatusLoading();
