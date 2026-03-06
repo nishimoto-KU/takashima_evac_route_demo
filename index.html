@@ -211,8 +211,37 @@ A/B/CA/CB：目的地（避難所）
     <div class="box">
       <pre id="status">データ読み込み中…</pre>
     </div>
+	
+	<!-- 8) リスク評価方法 -->
+    <h2>リスク評価方法</h2>
+    <div class="box">
+      <details>
+        <summary>クリックして開く</summary>
+        <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
+【転落リスク】
+転落リスクは、水路や河川に近い道路で転落の危険が高まると考え、
+道路と水路・河川の位置関係、道路幅、道路の傾斜、防護柵の有無に関する情報をもとに評価しています。
 
-    <!-- 8) 詳細説明欄（長文はこちらへ） -->
+防護柵については、1本1本の道路を現地確認しているわけではありません。
+そのため、「この道路には防護柵がありそうか」を直接示すものではなく、
+転落しにくさに関わる参考情報の一つとして扱っています。
+
+【浸水リスク】
+浸水リスクは、複数の浸水計算結果をもとに、
+その道路がどの程度浸水しやすいかを評価したものです。
+
+危険区間をクリックしたときに表示される「○/24」は、
+24通りの浸水計算のうち、その道路が浸水したと判定された回数を表しています。
+たとえば「6/24」は、24通りのうち6通りで浸水したことを意味します。
+
+【見方の注意】
+ここで示すリスクは、避難経路を比較するための研究上の指標です。
+実際の現地状況とは異なる場合があるため、参考情報としてご覧ください。
+        </div>
+      </details>
+    </div>
+	
+    <!-- 9) 詳細説明欄（長文はこちらへ） -->
     <h2>補足と注意事項</h2>
     <div class="box">
       <details>
@@ -256,7 +285,7 @@ A/B/CA/CB：目的地（避難所）
 その場合、上記の優先順位に従って「到達可能な経路」が表示されます。
 
 【最終更新日】
-2026/1/25
+2026/3/6
         </div>
       </details>
     </div>
@@ -1067,22 +1096,30 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
   }
 
   function addRiskFromStepParts(stepParts, dashed, isOld){
-    let accType=null;
-    let accCoords=null;
-    let accAttr=null;
+    let accType = null;
+    let accCoords = null;
+    let accAttr = null;
+    let accEdgeIDs = [];
 
     const flush = () => {
-      if (!accType || !accCoords || accCoords.length<2) { accType=null; accCoords=null; accAttr=null; return; }
-      const geom = new ol.geom.LineString(accCoords).transform("EPSG:4326","EPSG:3857");
+      if (!accType || !accCoords || accCoords.length < 2) {
+        accType = null;
+        accCoords = null;
+        accAttr = null;
+        accEdgeIDs = [];
+        return;
+      }
+
+      const geom = new ol.geom.LineString(accCoords).transform("EPSG:4326", "EPSG:3857");
       const f = new ol.Feature({ geometry: geom });
-      f.set("kind","risk");
+      f.set("kind", "risk");
       f.set("riskType", accType);
       f.set("dashed", dashed);
 
       const floodCount = Number(accAttr?.count ?? 0);
       const floodPct = Number.isFinite(Number(accAttr?.flood_ratio_pct))
         ? Number(accAttr?.flood_ratio_pct)
-        : (floodCount/24.0*100.0);
+        : (floodCount / 24.0 * 100.0);
 
       const fallPct = isOld ? Number(accAttr?.Rfall_old_pct ?? 0) : Number(accAttr?.Rfall_young_pct ?? 0);
 
@@ -1095,38 +1132,57 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       f.set("rf_slope_pct", Number(accAttr?.rf_slope_pct ?? 0));
       f.set("rf_fence_pct", Number(accAttr?.rf_fence_pct ?? 0));
 
+      // 追加：この危険区間に含まれる道路番号一覧
+      f.set("edgeIDs", Array.from(new Set(accEdgeIDs)));
+
       riskSource.addFeature(f);
 
-      accType=null; accCoords=null; accAttr=null;
+      accType = null;
+      accCoords = null;
+      accAttr = null;
+      accEdgeIDs = [];
     };
 
     for (const sp of stepParts){
-      const eid = sp.edgeID|0;
+      const eid = sp.edgeID | 0;
       const attr = edgeAttrById.get(eid);
-      if (!attr) { flush(); continue; }
+      if (!attr) {
+        flush();
+        continue;
+      }
 
       const cls = edgeRiskClass(attr, isOld);
-      if (!cls) { flush(); continue; }
+      if (!cls) {
+        flush();
+        continue;
+      }
 
       const coords = sp.coords;
-      if (!coords || coords.length<2) { flush(); continue; }
+      if (!coords || coords.length < 2) {
+        flush();
+        continue;
+      }
 
-      if (accType === cls){
-        if (accCoords && samePoint(accCoords[accCoords.length-1], coords[0], TOL_JOIN)){
-          for (let k=1;k<coords.length;k++) accCoords.push(coords[k]);
+      if (accType === cls) {
+        if (accCoords && samePoint(accCoords[accCoords.length - 1], coords[0], TOL_JOIN)) {
+          for (let k = 1; k < coords.length; k++) accCoords.push(coords[k]);
+          accEdgeIDs.push(eid);
         } else {
           flush();
           accType = cls;
           accCoords = coords.slice();
           accAttr = attr;
+          accEdgeIDs = [eid];
         }
       } else {
         flush();
         accType = cls;
         accCoords = coords.slice();
         accAttr = attr;
+        accEdgeIDs = [eid];
       }
     }
+
     flush();
   }
 
@@ -1134,14 +1190,20 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     const rtype = feature.get("riskType");
     const lines = [];
 
+    const edgeIDs = feature.get("edgeIDs");
+    if (Array.isArray(edgeIDs) && edgeIDs.length > 0) {
+      lines.push(`道路番号: ${edgeIDs.join(", ")}`);
+      lines.push("");
+    }
+
     const c = Number(feature.get("floodCount") ?? 0);
     const p = Number(feature.get("floodPct") ?? 0);
-    if (rtype==="FLOOD" || rtype==="BOTH"){
-      if (c>0) lines.push(`浸水の危険性: ${c.toFixed(0)}/24 (${p.toFixed(1)}%)`);
+    if (rtype === "FLOOD" || rtype === "BOTH"){
+      if (c > 0) lines.push(`浸水の危険性: ${c.toFixed(0)}/24 (${p.toFixed(1)}%)`);
     }
 
     const fallPct = Number(feature.get("fallPct") ?? 0);
-    if ((rtype==="FALL" || rtype==="BOTH") && fallPct>0){
+    if ((rtype === "FALL" || rtype === "BOTH") && fallPct > 0){
       lines.push("転落の危険性");
 
       const w = Number(feature.get("rf_width_pct") ?? 0);
@@ -1149,13 +1211,13 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       const s = Number(feature.get("rf_slope_pct") ?? 0);
       const f = Number(feature.get("rf_fence_pct") ?? 0);
 
-      if (w>0) lines.push("・道路幅が狭く、水路との距離を十分に確保できない可能性があります");
-      if (b>0) lines.push("・水路・河川に近接しており、転落するリスクが存在する可能性が高いです");
-      if (s>0) lines.push("・道路に傾斜があり、歩行安定性を低減させる可能性があります");
-      if (f>0) lines.push("・転落防止の防護柵の有無に注意してください");
+      if (w > 0) lines.push("・道路幅が狭く、水路との距離を十分に確保できない可能性があります");
+      if (b > 0) lines.push("・水路・河川に近接しており、転落するリスクが存在する可能性が高いです");
+      if (s > 0) lines.push("・道路に傾斜があり、歩行安定性を低減させる可能性があります");
+      if (f > 0) lines.push("・転落防止の防護柵の有無に注意してください");
     }
 
-    if (lines.length===0) lines.push("リスク情報はありません。");
+    if (lines.length === 0) lines.push("リスク情報はありません。");
     return lines.join("\n");
   }
 
