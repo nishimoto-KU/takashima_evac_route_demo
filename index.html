@@ -156,7 +156,7 @@ S：出発点
 A/B/CA/CB：目的地（避難所）
 
 【危険区間（赤/橙/紫）】
-経路上の危険区間をクリックすると、浸水・転落のリスク情報を表示します。
+経路上の道路をクリックすると、その道路の道路番号と、浸水・転落のリスク情報を表示します。
 ※ここで示す「リスク」は研究上の指標であり、現実の安全を保証するものではありません。
         </div>
       </details>
@@ -236,7 +236,17 @@ A/B/CA/CB：目的地（避難所）
 
 【見方の注意】
 ここで示すリスクは、避難経路を比較するための研究上の指標です。
+
+
 実際の現地状況とは異なる場合があるため、参考情報としてご覧ください。
+
+転落リスクは、水路への転落に関わる要因として、道路の傾斜、道路の幅、隣接する水路・河川の規模、防護柵が設置されていそうかどうかを考慮して評価しています。
+
+このうち、防護柵については実際の設置状況を示すデータがないため、仮定に基づいて評価しています。そのため、実際の道路状況と異なる場合があります。マップと現実の違いを見つけた場合は、記載の連絡先まで、該当する道路の道路番号と実際の状況をご連絡ください（例：道路番号4021（1122→1125）は、実際にはフェンスあり）。今後のマップ修正に活用します。
+
+浸水リスクは、河川洪水が発生しうる大雨を対象とした氾濫シミュレーションの結果をもとに評価しています。24通りの異なる降雨パターンで計算を行い、そのうち何回その道路が浸水したかを用いています。危険区間をクリックしたときに表示される「○/24」は、この24通りのうち、その道路が浸水した回数を表しています。
+また、水路と隣接する道路では、浸水時に道路と水路の境界が分かりにくくなり、より危険になると考えています。そのため、浸水回数が同じ道路でも、水路と隣接している場合は、より危険側に評価しています。
+
         </div>
       </details>
     </div>
@@ -483,6 +493,21 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       });
     }
   });
+  
+  const clickSource = new ol.source.Vector();
+  const clickLayer = new ol.layer.Vector({
+    source: clickSource,
+    style: () => new ol.style.Style({
+      stroke: new ol.style.Stroke({
+        color: "rgba(0,0,0,0.01)",
+        width: 18,
+        lineCap: "round"
+      })
+    })
+  });
+
+  // 重複登録防止
+  const clickFeatureKeys = new Set();
 
   const highlightSource = new ol.source.Vector();
   const highlightLayer = new ol.layer.Vector({
@@ -536,6 +561,7 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       new ol.layer.Tile({ source: new ol.source.OSM() }),
       routeLayer,
       riskLayer,
+	  clickLayer,
       highlightLayer,
       pointLayer
     ],
@@ -1029,7 +1055,13 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       let seg = pickPartByEndpoints(eid, curPt, nextPt);
       if (!seg) seg = [curPt, nextPt];
 
-      stepParts.push({ edgeID: eid, coords: seg });
+      //stepParts.push({ edgeID: eid, coords: seg });
+	  stepParts.push({
+        edgeID: eid,
+        startNodeID: Number(nodeIdArr[vCur]) | 0,
+        endNodeID: Number(nodeIdArr[vNext]) | 0,
+        coords: seg
+      });
 
       if (curLine.length===0){
         curLine = seg.slice();
@@ -1186,20 +1218,70 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     flush();
   }
 
-  function buildRiskMessage(feature){
-    const rtype = feature.get("riskType");
-    const lines = [];
+  function addClickFeaturesFromStepParts(stepParts, isOld){
+    for (const sp of stepParts){
+      const eid = Number(sp.edgeID) | 0;
+      const startNodeID = Number(sp.startNodeID) | 0;
+      const endNodeID = Number(sp.endNodeID) | 0;
+      const coords = sp.coords;
 
-    const edgeIDs = feature.get("edgeIDs");
-    if (Array.isArray(edgeIDs) && edgeIDs.length > 0) {
-      lines.push(`道路番号: ${edgeIDs.join(", ")}`);
-      lines.push("");
+      if (!coords || coords.length < 2) continue;
+
+      const uniqKey = `${eid}|${startNodeID}|${endNodeID}`;
+      if (clickFeatureKeys.has(uniqKey)) continue;
+      clickFeatureKeys.add(uniqKey);
+
+      const attr = edgeAttrById.get(eid);
+      const riskType = attr ? (edgeRiskClass(attr, isOld) || "NONE") : "NONE";
+
+      const floodCount = Number(attr?.count ?? 0);
+      const floodPct = Number.isFinite(Number(attr?.flood_ratio_pct))
+        ? Number(attr?.flood_ratio_pct)
+        : (floodCount / 24.0 * 100.0);
+
+      const fallPct = isOld ? Number(attr?.Rfall_old_pct ?? 0) : Number(attr?.Rfall_young_pct ?? 0);
+
+      const geom = new ol.geom.LineString(coords).transform("EPSG:4326", "EPSG:3857");
+      const f = new ol.Feature({ geometry: geom });
+
+      f.set("kind", "routeStep");
+      f.set("edgeID", eid);
+      f.set("startNodeID", startNodeID);
+      f.set("endNodeID", endNodeID);
+      f.set("riskType", riskType);
+
+      f.set("floodCount", floodCount);
+      f.set("floodPct", floodPct);
+      f.set("fallPct", fallPct);
+
+      f.set("rf_width_pct", Number(attr?.rf_width_pct ?? 0));
+      f.set("rf_base_pct", Number(attr?.rf_base_pct ?? 0));
+      f.set("rf_slope_pct", Number(attr?.rf_slope_pct ?? 0));
+      f.set("rf_fence_pct", Number(attr?.rf_fence_pct ?? 0));
+
+      clickSource.addFeature(f);
     }
+  }
+
+  function buildRiskMessage(feature){
+    const edgeID = Number(feature.get("edgeID") ?? 0);
+    const startNodeID = Number(feature.get("startNodeID") ?? 0);
+    const endNodeID = Number(feature.get("endNodeID") ?? 0);
+    const rtype = feature.get("riskType") || "NONE";
+
+    const lines = [];
+    lines.push(`道路番号：${edgeID}（${startNodeID}→${endNodeID}）`);
+    lines.push("");
+
+    let hasRiskText = false;
 
     const c = Number(feature.get("floodCount") ?? 0);
     const p = Number(feature.get("floodPct") ?? 0);
     if (rtype === "FLOOD" || rtype === "BOTH"){
-      if (c > 0) lines.push(`浸水の危険性: ${c.toFixed(0)}/24 (${p.toFixed(1)}%)`);
+      if (c > 0){
+        lines.push(`浸水の危険性: ${c.toFixed(0)}/24 (${p.toFixed(1)}%)`);
+        hasRiskText = true;
+      }
     }
 
     const fallPct = Number(feature.get("fallPct") ?? 0);
@@ -1215,18 +1297,31 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       if (b > 0) lines.push("・水路・河川に近接しており、転落するリスクが存在する可能性が高いです");
       if (s > 0) lines.push("・道路に傾斜があり、歩行安定性を低減させる可能性があります");
       if (f > 0) lines.push("・転落防止の防護柵の有無に注意してください");
+
+      hasRiskText = true;
     }
 
-    if (lines.length === 0) lines.push("リスク情報はありません。");
+    if (!hasRiskText){
+      lines.push("この区間では、浸水・転落のリスクは表示されていません。");
+    }
+
     return lines.join("\n");
   }
 
   map.on("singleclick", (evt) => {
-    let picked=null;
-    map.forEachFeatureAtPixel(evt.pixel, (feature) => {
-      if (feature && feature.get("kind")==="risk"){ picked=feature; return true; }
-      return false;
-    });
+    let picked = null;
+
+    map.forEachFeatureAtPixel(
+      evt.pixel,
+      (feature) => {
+        if (feature && feature.get("kind") === "routeStep"){
+          picked = feature;
+          return true;
+        }
+        return false;
+      },
+      { hitTolerance: 6 }
+    );
 
     if (!picked){
       hidePopup();
@@ -1238,22 +1333,26 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
     hf.set("riskType", picked.get("riskType"));
     highlightSource.addFeature(hf);
 
-    const rtype = picked.get("riskType");
+    const rtype = picked.get("riskType") || "NONE";
     popupTitleEl.textContent =
-      (rtype==="BOTH") ? "浸水 + 転落の危険性" :
-      (rtype==="FLOOD") ? "浸水の危険性" :
-      (rtype==="FALL") ? "転落の危険性" : "リスク情報";
+      (rtype === "BOTH") ? "浸水 + 転落の危険性" :
+      (rtype === "FLOOD") ? "浸水の危険性" :
+      (rtype === "FALL") ? "転落の危険性" : "道路情報";
 
-    popupContentEl.innerHTML = `<pre style="margin:0; white-space:pre-wrap;">${buildRiskMessage(picked)}</pre>`;
+    popupContentEl.innerHTML =
+      `<pre style="margin:0; white-space:pre-wrap;">${buildRiskMessage(picked)}</pre>`;
 
     popupOverlay.setPosition(evt.coordinate);
-    popupEl.style.display="block";
+    popupEl.style.display = "block";
   });
-
+  
+  
   // ---------- UI ----------
   function clearAll(){
     routeSource.clear();
     riskSource.clear();
+    clickSource.clear();
+    clickFeatureKeys.clear();
     pointSource.clear();
     highlightSource.clear();
     hidePopup();
@@ -1330,8 +1429,15 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       const modeLabel = (optRfallOnly && optRfallOnly.checked) ? "転落のみ" : "複合";
       setCondLine(age, thr);
 
-      routeSource.clear(); riskSource.clear(); pointSource.clear(); highlightSource.clear();
-
+      //routeSource.clear(); riskSource.clear(); pointSource.clear(); highlightSource.clear();
+      routeSource.clear();
+      riskSource.clear();
+      clickSource.clear();
+      clickFeatureKeys.clear();
+      pointSource.clear();
+      highlightSource.clear();
+	  
+	  
       addPointLonLat(lon, lat, "click", "");
       addPointLonLat(lonArr[v0], latArr[v0], "start", "S");
 
@@ -1388,8 +1494,14 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
       const showRoute = (routeType, out, destLabel, dashedOverride=null) => {
         const r = addRoute(routeType, out.edgeSeq, out.vidSeq);
         addDestMarker(out.root, destLabel);
+
         const dashed = (dashedOverride !== null) ? dashedOverride
           : (routeType==="A" || routeType==="B" || routeType==="A0" || routeType==="B0");
+
+        // クリック用：1道路区間 = 1 feature
+        addClickFeaturesFromStepParts(r.stepParts, isOld);
+
+        // 見た目用：従来どおり危険区間をまとめて表示
         addRiskFromStepParts(r.stepParts, dashed, isOld);
       };
 
