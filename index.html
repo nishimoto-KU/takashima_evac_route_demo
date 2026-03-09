@@ -219,33 +219,15 @@ A/B/CA/CB：目的地（避難所）
         <summary>クリックして開く</summary>
         <div class="muted" style="white-space:pre-wrap; line-height:1.5; margin-top:8px;">
 【転落リスク】
-転落リスクは、水路や河川に近い道路で転落の危険が高まると考え、
-道路と水路・河川の位置関係、道路幅、道路の傾斜、防護柵の有無に関する情報をもとに評価しています。
-
-防護柵については、1本1本の道路を現地確認しているわけではありません。
-そのため、「この道路には防護柵がありそうか」を直接示すものではなく、
-転落しにくさに関わる参考情報の一つとして扱っています。
+転落リスクは、水路への転落に関わる要因として、道路の傾斜、道路の幅、隣接する水路・河川の規模、防護柵が設置されていそうかどうかを考慮して評価しています。
+このうち、防護柵については実際の設置状況を示すデータがないため、仮定に基づいて評価しています。そのため、1本1本の道路を現地確認しているわけではなく、実際の道路状況と異なる場合があります。マップと現実の違いを見つけた場合は、記載の連絡先まで、該当する道路の道路番号と実際の状況をご連絡ください。今後のマップ修正に活用します。
+（例：道路番号4021（1122→1125）は、実際にはフェンスあり）
 
 【浸水リスク】
-浸水リスクは、複数の浸水計算結果をもとに、
-その道路がどの程度浸水しやすいかを評価したものです。
-
-危険区間をクリックしたときに表示される「○/24」は、
-24通りの浸水計算のうち、その道路が浸水したと判定された回数を表しています。
-たとえば「6/24」は、24通りのうち6通りで浸水したことを意味します。
-
-【見方の注意】
-ここで示すリスクは、避難経路を比較するための研究上の指標です。
-
-
-実際の現地状況とは異なる場合があるため、参考情報としてご覧ください。
-
-転落リスクは、水路への転落に関わる要因として、道路の傾斜、道路の幅、隣接する水路・河川の規模、防護柵が設置されていそうかどうかを考慮して評価しています。
-
-このうち、防護柵については実際の設置状況を示すデータがないため、仮定に基づいて評価しています。そのため、実際の道路状況と異なる場合があります。マップと現実の違いを見つけた場合は、記載の連絡先まで、該当する道路の道路番号と実際の状況をご連絡ください（例：道路番号4021（1122→1125）は、実際にはフェンスあり）。今後のマップ修正に活用します。
-
-浸水リスクは、河川洪水が発生しうる大雨を対象とした氾濫シミュレーションの結果をもとに評価しています。24通りの異なる降雨パターンで計算を行い、そのうち何回その道路が浸水したかを用いています。危険区間をクリックしたときに表示される「○/24」は、この24通りのうち、その道路が浸水した回数を表しています。
-また、水路と隣接する道路では、浸水時に道路と水路の境界が分かりにくくなり、より危険になると考えています。そのため、浸水回数が同じ道路でも、水路と隣接している場合は、より危険側に評価しています。
+浸水リスクは、河川洪水が発生しうる大雨を対象とした氾濫シミュレーションの結果をもとに、その道路がどの程度浸水しやすいかを評価したものです。
+24通りの異なる雨の降り方でシミュレーションを行い、そのうち何回その道路が浸水したかを用いています。
+危険区間をクリックしたときに表示される「○/24」は、この24通りのうち、その道路が浸水した回数を表しています。例えば、「6/24」は、24通りのうち6通りで浸水したことを意味します。
+また、水路と隣接する道路では、浸水時に道路と水路の境界が分かりにくくなり、より危険になると考えています。そのため、浸水回数が同じ道路でも、水路と隣接している場合は、より危険であるように評価しています。
 
         </div>
       </details>
@@ -293,9 +275,6 @@ A/B/CA/CB：目的地（避難所）
 
 補足：期待安全度の値や出発点周辺の地形・道路状況によっては、危険区間を完全に避けられない場合があります。
 その場合、上記の優先順位に従って「到達可能な経路」が表示されます。
-
-【最終更新日】
-2026/3/6
         </div>
       </details>
     </div>
@@ -306,7 +285,7 @@ A/B/CA/CB：目的地（避難所）
       <div class="muted" style="white-space:pre-wrap; line-height:1.5;">
 不具合報告・改善提案は GitHub の Issues でご連絡ください。
 https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
-
+最終更新日：2026/3/6
 作成者：<br>京都大学大学院 工学研究科 都市社会工学専攻<br>修士課程（2025年度修了）   西本　大輔
       </div>
     </div>
@@ -1516,22 +1495,22 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
 
         if (outCA.ok || outCB.ok){
           if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
-            lines.push("CA と CB は同一経路 → CA のみ表示");
+            lines.push("転落リスクをできるだけ避けた同一自治体内での代替経路を表示中です。");
             showRoute("CA", outCA, "CA", false);
-            lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+            lines.push(`同一自治体内の避難所への代替経路: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
           } else {
             if (outCA.ok){
               showRoute("CA", outCA, "CA", false);
-              lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+              lines.push(`同一自治体内の避難所への代替経路: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
             } else lines.push("CA（同自治体）: 到達不能");
 
             if (outCB.ok){
               showRoute("CB", outCB, "CB", false);
-              lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
+              lines.push(`自治体外を含めた代替経路: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
             } else lines.push("CB（境界なし）: 到達不能");
           }
 
-          lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+          lines.push("地図上の道路をクリックすると、道路番号とリスク情報を確認できます。");
           resultEl.textContent = lines.join("\n");
           fitToAll();
           setCondLine(age, thr);
@@ -1546,21 +1525,21 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
 
         if (outA0.ok || outB0.ok){
           if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
-            lines.push("A0 と B0 は同一経路 → A0 のみ表示");
+            lines.push("危険を無視した場合の，同一自治体内の避難所への経路を表示中です。");
             showRoute("A0", outA0, "A0", true);
-            lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+            lines.push(`同一自治体内の避難所への最短経路: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
           } else {
             if (outA0.ok){
               showRoute("A0", outA0, "A0", true);
-              lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+              lines.push(`同一自治体内の避難所への最短経路: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
             } else lines.push("A0（同自治体）: 到達不能");
 
             if (outB0.ok){
               showRoute("B0", outB0, "B0", true);
-              lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
+              lines.push(`自治体外を含めた最短経路: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
             } else lines.push("B0（境界なし）: 到達不能");
           }
-          lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+          lines.push("地図上の道路をクリックすると、道路番号とリスク情報を確認できます。");
           resultEl.textContent = lines.join("\n");
           fitToAll();
           setCondLine(age, thr);
@@ -1579,76 +1558,76 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
 
       if (outA.ok || outB.ok){
         if (outA.ok && outB.ok && sameSeq(outA.edgeSeq, outB.edgeSeq)){
-          lines.push("A と B は同一経路 → A（推奨）のみ表示");
+          lines.push("同一自治体内の避難所への経路を表示中です");
           showRoute("A", outA, "A", true);
-          lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
+          lines.push(`同一自治体内の避難所への経路: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
         } else {
           if (outA.ok){
             showRoute("A", outA, "A", true);
-            lines.push(`A（同自治体）: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
+            lines.push(`同一自治体内の避難所への経路: ${formatMinutes(outA.dist)} / 避難所：${shelterName(outA.root) || "（名称不明）"}`);
           } else lines.push("A（同自治体）: 到達不能");
 
           if (outB.ok){
             showRoute("B", outB, "B", true);
-            lines.push(`B（境界なし）: ${formatMinutes(outB.dist)} / 避難所：${shelterName(outB.root) || "（名称不明）"}`);
+            lines.push(`自治体外を含めた最短の避難所への経路: ${formatMinutes(outB.dist)} / 避難所：${shelterName(outB.root) || "（名称不明）"}`);
           } else lines.push("B（境界なし）: 到達不能");
         }
-        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        lines.push("地図上の道路をクリックすると、道路番号とリスク情報を確認できます。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
         setCondLine(age, thr);
         return;
       }
 
-      lines.push("A/B が到達不能 → CA/CB（転落回避）を表示");
+      lines.push("安全度の条件を満たす経路が見つからなかったため、転落リスクのみを避ける代替経路を表示しています。");
       const outCA = await runOne("muni_rfall", thrIdx);
       const outCB = await runOne("global_rfall", thrIdx);
 
       if (outCA.ok || outCB.ok){
         if (outCA.ok && outCB.ok && sameSeq(outCA.edgeSeq, outCB.edgeSeq)){
-          lines.push("CA と CB は同一経路 → CA のみ表示");
+          lines.push("転落リスクをできるだけ避けた同一自治体内での代替経路を表示中です。");
           showRoute("CA", outCA, "CA", false);
-          lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+          lines.push(`同一自治体内の避難所への代替経路: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
         } else {
           if (outCA.ok){
             showRoute("CA", outCA, "CA", false);
-            lines.push(`CA（同自治体）: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
+            lines.push(`同一自治体内の避難所への代替経路: ${formatMinutes(outCA.dist)} / 避難所：${shelterName(outCA.root) || "（名称不明）"}`);
           } else lines.push("CA（同自治体）: 到達不能");
 
           if (outCB.ok){
             showRoute("CB", outCB, "CB", false);
-            lines.push(`CB（境界なし）: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
+            lines.push(`自治体外を含めた代替経路: ${formatMinutes(outCB.dist)} / 避難所：${shelterName(outCB.root) || "（名称不明）"}`);
           } else lines.push("CB（境界なし）: 到達不能");
         }
-        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        lines.push("地図上の道路をクリックすると、道路番号とリスク情報を確認できます。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
         setCondLine(age, thr);
         return;
       }
 
-      lines.push("CA/CB も到達不能 → A0/B0（期待安全度=0.0）を表示");
+      lines.push("安全度や転落回避の条件を満たす経路が見つからなかったため、危険の有無を問わず、最も早く避難できる経路を表示しています。");
       const thrIdx0 = pickThrIdx(ageInfo.thresholds, 0.0);
       const outA0 = await runOne("muni_psafe", thrIdx0);
       const outB0 = await runOne("global_psafe", thrIdx0);
 
       if (outA0.ok || outB0.ok){
         if (outA0.ok && outB0.ok && sameSeq(outA0.edgeSeq, outB0.edgeSeq)){
-          lines.push("A0 と B0 は同一経路 → A0 のみ表示");
+          lines.push("危険を無視した場合の，同一自治体内の避難所への経路を表示中です。");
           showRoute("A0", outA0, "A0", true);
-          lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+          lines.push(`同一自治体内の避難所への最短経路: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
         } else {
           if (outA0.ok){
             showRoute("A0", outA0, "A0", true);
-            lines.push(`A0（同自治体）: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
+            lines.push(`同一自治体内の避難所への最短経路: ${formatMinutes(outA0.dist)} / 避難所：${shelterName(outA0.root) || "（名称不明）"}`);
           } else lines.push("A0（同自治体）: 到達不能");
 
           if (outB0.ok){
             showRoute("B0", outB0, "B0", true);
-            lines.push(`B0（境界なし）: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
+            lines.push(`自治体外を含めた最短経路: ${formatMinutes(outB0.dist)} / 避難所：${shelterName(outB0.root) || "（名称不明）"}`);
           } else lines.push("B0（境界なし）: 到達不能");
         }
-        lines.push("道路（危険区間）をクリックしてリスクをご確認ください。");
+        lines.push("地図上の道路をクリックすると、道路番号とリスク情報を確認できます。");
         resultEl.textContent = lines.join("\n");
         fitToAll();
         setCondLine(age, thr);
