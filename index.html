@@ -1488,7 +1488,7 @@ https://github.com/nishimoto-KU/takashima_evac_route_demo/issues
 
       // --- 転落のみモード ---
       if (rfallOnlyMode){
-        lines.push("表示モード：転落リスク回避（浸水は考慮しません）");
+        lines.push("表示モード：転落リスクのみを回避");
 
         const outCA = await runOne("muni_rfall", thrIdx);
         const outCB = await runOne("global_rfall", thrIdx);
